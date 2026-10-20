@@ -5,8 +5,8 @@ displays. The name is Brazilian-inspired, from Portuguese *sábio* (wise).
 
 ## Status
 
-Project foundation and architecture only. There is no deployed service, implemented
-device pairing, authentication, or live data integration yet. Do not upload personal
+Project foundation, architecture, and local Cloudflare CLI tooling only. There is
+no deployed service, implemented device pairing, authentication, or live data integration yet. Do not upload personal
 data or credentials assuming access controls already exist.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
@@ -73,8 +73,37 @@ or billing changes have been made for this project.
 - Test authentication, denial, enrollment expiry, revocation, and private-cache
   behavior before adding personal integrations or publishing private endpoints.
 
-There are no install, test, or deployment commands yet; executable scaffolding is
-the next implementation step. Public code/examples must never contain private data.
+### Local CLI setup
+
+Use Node.js 22 or newer and the pinned pnpm 10.23.0. From this repository:
+
+```sh
+pnpm install --frozen-lockfile
+WRANGLER_SEND_METRICS=false pnpm wrangler --version
+```
+
+Wrangler is an exact-pinned development dependency (`4.151.3`), not a global install.
+The lockfile pins dependencies/integrities; only the `esbuild` and `workerd` dependency
+build scripts are allowed by the pnpm package configuration. The command above opts
+out of optional Wrangler metrics for that invocation.
+
+Read-only authentication check:
+
+```sh
+WRANGLER_SEND_METRICS=false pnpm wrangler whoami
+```
+
+`whoami` can print account/email identifiers; keep its output private. Initial setup
+verified version/help, an offline frozen-lockfile install and a dependency audit
+with no reported vulnerabilities. The auth check reported not logged in; no login,
+Cloudflare resources, environment, deployment or billing change was performed.
+
+Once the owner approves account authorization, `pnpm wrangler login` starts the
+browser login flow. Complete it on a trusted computer; never paste tokens into chat
+or commit them. Login is separate from authorization to create/deploy resources.
+
+There is no application runtime or test/deploy script yet; executable Worker/frontend
+scaffolding is the next implementation step. Public examples must not contain private data.
 
 ## License
 

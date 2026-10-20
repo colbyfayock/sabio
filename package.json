@@ -1,0 +1,24 @@
+{
+  "name": "sabio",
+  "version": "0.0.0",
+  "private": true,
+  "description": "An owner-controlled dashboard for approved displays",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.23.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "wrangler": "wrangler"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  },
+  "devDependencies": {
+    "wrangler": "4.151.3"
+  }
+}
