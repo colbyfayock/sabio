@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f3eee3">
+    <title>Sabio — a little more present</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="wordmark" href="/" aria-label="Sabio home">
+          <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M20 3.5c2.1 8.4 8.1 14.4 16.5 16.5C28.1 22.1 22.1 28.1 20 36.5 17.9 28.1 11.9 22.1 3.5 20 11.9 17.9 17.9 11.9 20 3.5Z" fill="currentColor"/>
+            <circle cx="20" cy="20" r="3.2" fill="#f3eee3"/>
+          </svg>
+          <span>sabio<span class="wordmark-period">.</span></span>
+        </a>
+        <div class="topbar-tools">
+          <span class="demo-badge"><span class="badge-dot"></span>Demo / sample data</span>
+          <button class="fullscreen-button" id="fullscreen-toggle" type="button" aria-pressed="false">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4M13 3h4v4M17 13v4h-4M3 13v4h4"/></svg>
+            <span id="fullscreen-label">Enter fullscreen</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="welcome-panel" aria-labelledby="welcome-title">
+          <div class="welcome-copy">
+            <p class="eyebrow"><span class="eyebrow-line"></span>A softer start to the day</p>
+            <h1 id="welcome-title">Make room<br>for <em>what matters.</em></h1>
+            <p class="welcome-caption">A small pause, before the day<br class="wide-break"> asks for everything.</p>
+          </div>
+
+          <div class="time-block">
+            <time id="clock" class="clock" aria-live="off">--:--</time>
+            <p id="date" class="date-line">Checking your local time…</p>
+          </div>
+
+          <section class="weather-card" aria-label="Sample weather">
+            <div class="weather-symbol" aria-hidden="true">
+              <svg viewBox="0 0 64 64"><circle cx="32" cy="31" r="12"/><path d="M32 5v8M32 51v8M6 31h8M50 31h8M13.6 12.6l5.7 5.7M44.7 44.7l5.7 5.7M50.4 12.6l-5.7 5.7M19.3 44.7l-5.7 5.7"/></svg>
+            </div>
+            <div class="weather-main">
+              <p class="weather-label">A little outside</p>
+              <p class="temperature" id="temperature">Waiting for sample weather</p>
+              <p class="condition" id="condition">Demo forecast</p>
+            </div>
+            <div class="weather-range" id="weather-range">—</div>
+            <p class="weather-location" id="weather-location">Sample location</p>
+          </section>
+          <p class="weather-note" id="demo-note">Forecast shown for demonstration only.</p>
+        </section>
+
+        <div class="right-column">
+          <section class="agenda-card" aria-labelledby="agenda-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">On the horizon</p>
+                <h2 id="agenda-title">Today, gently.</h2>
+              </div>
+              <span class="section-index">01 <span>/</span> DAY</span>
+            </div>
+            <p id="agenda-empty" class="empty-message">Your sample agenda will appear here.</p>
+            <ol class="event-list" id="event-list" aria-label="Sample agenda"></ol>
+          </section>
+
+          <section class="ritual-card" aria-labelledby="ritual-title">
+            <div class="ritual-heading">
+              <div>
+                <p class="eyebrow">A few good things</p>
+                <h2 id="ritual-title">Little rituals</h2>
+              </div>
+              <svg class="ritual-spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1"/></svg>
+            </div>
+            <p class="ritual-caption">A mock checklist, just for this visit. Nothing is saved.</p>
+            <ul class="task-list" id="task-list" aria-label="Sample checklist"></ul>
+            <p class="task-empty" id="task-empty">Sample checklist is loading.</p>
+          </section>
+        </div>
+      </main>
+
+      <footer class="bottom-bar">
+        <div class="connection-status" aria-live="polite">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Waiting for sample data…</span>
+          <span class="status-detail" id="status-detail"></span>
+        </div>
+        <div class="footer-actions">
+          <button class="retry-button" id="retry-button" type="button">Retry now</button>
+          <span class="pairing-note">Pairing isn’t available in this demo.</span>
+        </div>
+      </footer>
+      <p class="fullscreen-message" id="fullscreen-message" role="status" aria-live="polite"></p>
+    </div>
+  </body>
+</html>

@@ -5,9 +5,10 @@ displays. The name is Brazilian-inspired, from Portuguese *sábio* (wise).
 
 ## Status
 
-Project foundation, architecture, and local Cloudflare CLI tooling only. There is
-no deployed service, implemented device pairing, authentication, or live data integration yet. Do not upload personal
-data or credentials assuming access controls already exist.
+The executable **LOCAL MOCK** milestone is implemented: a local Worker serves a
+synthetic dashboard and public mock API. This is not auth-ready: there is no pairing,
+authentication, private data path, or live integration. Do not put personal data or
+credentials into the app, even if Wrangler is authenticated locally.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
 The application should also support approved modern browsers. The old frame remains
@@ -47,8 +48,8 @@ pairing code for the administrator to approve, then receives a limited, revocabl
 browser session. Approval identifies a browser credential, **not cryptographic
 proof of a physical device**. Main provider credentials never belong on the frame.
 
-See [architecture](docs/architecture.md) for the proposed trust boundaries and
-implementation sequence, and [security](SECURITY.md) for reporting guidance.
+See [architecture](docs/architecture.md) for the implemented local mock boundary and
+future trust boundaries, and [security](SECURITY.md) for reporting guidance.
 
 ## Free-tier target
 
@@ -67,7 +68,7 @@ or billing changes have been made for this project.
 
 ## Development direction
 
-- TypeScript and ES modules for server code; pnpm when packages are introduced.
+- TypeScript and ES modules for server code; pinned pnpm tooling.
 - Standards-based display UI with an explicit Firefox 68 build/runtime target.
 - Mock/public data first; no sensitive account sessions on the legacy frame.
 - Test authentication, denial, enrollment expiry, revocation, and private-cache
@@ -93,17 +94,48 @@ Read-only authentication check:
 WRANGLER_SEND_METRICS=false pnpm wrangler whoami
 ```
 
-`whoami` can print account/email identifiers; keep its output private. Initial setup
-verified version/help, an offline frozen-lockfile install and a dependency audit
-with no reported vulnerabilities. The auth check reported not logged in; no login,
-Cloudflare resources, environment, deployment or billing change was performed.
+`whoami` can print account/email identifiers; keep its output private. Wrangler login
+is managed locally. Account authentication does not authorize deployment or resource creation.
+There is no direct deploy script or approval for remote deployment, resource creation,
+or billing changes. `pnpm build:worker` is a local packaging dry run, not a deployment.
 
-Once the owner approves account authorization, `pnpm wrangler login` starts the
-browser login flow. Complete it on a trusted computer; never paste tokens into chat
-or commit them. Login is separate from authorization to create/deploy resources.
+## Local development
 
-There is no application runtime or test/deploy script yet; executable Worker/frontend
-scaffolding is the next implementation step. Public examples must not contain private data.
+Run `pnpm install --frozen-lockfile`, then `pnpm check` for generated local types,
+Worker and frontend typechecks, build, and Node tests. `pnpm dev` builds and starts
+Wrangler locally on `127.0.0.1:8787`; Worker changes are handled by Wrangler, but
+frontend edits require `pnpm build` again. The build refuses unexpected files in
+`dist` rather than deleting them. Public examples and this mock app must never contain
+private data.
+
+```sh
+pnpm check
+pnpm dev
+# Open http://127.0.0.1:8787 on this computer.
+```
+
+The mock UI uses the browser-local clock and synthetic weather, agenda, and checklist
+content. It polls every 60 seconds with a 12-second timeout and backoff up to five
+minutes; checkboxes are in-memory only. Retry/offline/stale-data states retain displayed
+data, and fullscreen requires a user gesture. Static HTML, CSS, app JavaScript, and
+favicon are public; `/api/demo` and `/health` are public, `/api/display` returns 401
+regardless of fake cookies, enrollment/admin/auth routes return 503, and other API or
+static misses return 404 before asset fallback. There are no backend, provider-data,
+storage, or credential bindings. Do not treat any route as protecting personal data.
+
+### Validation status
+
+- 22 Node tests cover routing/denial, response policy, payload validation, text-only
+  rendering, poll backoff/timeouts/offline recovery, in-memory tasks, and fullscreen
+  state/error handling. These are unit tests, not old-browser emulation.
+- Actual local `workerd` smoke checks passed for 11 asset/API/error routes.
+- Local Chromium checks passed for 1280×800 layout, fullscreen entry/exit, checklist
+  preservation after refresh, failed-refresh data retention, and a 390-pixel layout.
+- Automated desktop accessibility checks reported zero violations and no incomplete
+  checks after contrast fixes. This is not a complete accessibility certification.
+- No remote deployment or new frame/Firefox-68 hardware test has been performed.
+- `pnpm build:worker` packages successfully without upload. GitHub Actions runs the
+  install/check/dry-run sequence without Cloudflare credentials or deployment steps.
 
 ## License
 

@@ -1,6 +1,35 @@
 # Architecture and implementation direction
 
-Status: proposed design, not an implemented security guarantee.
+Status: **LOCAL MOCK executable milestone** implemented; the authorization and
+integration architecture below is proposed design, not an implemented security
+guarantee. No remote deployment is authorized or implied.
+
+## Current local implementation
+
+Wrangler runs the Worker before asset handling (`run_worker_first`); there is no SPA
+fallback. The Worker exposes public synthetic JSON at `/api/demo` and public `/health`;
+`/api/display` returns 401 independently of fake cookies. `/api/enrollment`, `/api/admin`,
+`/admin`, and `/auth` subpaths return 503. Unknown API and static paths return 404
+before the asset binding. The public static allowlist is HTML, CSS, app JavaScript, and
+favicon. There are no backend/provider-data/storage bindings or credentials.
+
+The IIFE frontend targets Firefox 68 at build time but is not validated on actual
+Firefox 68 hardware. It shows synthetic weather, agenda, and checklist data using the
+browser-local clock. It polls every 60 seconds with a 12-second timeout and backoff up
+to five minutes; checkbox state is in memory. Retry/offline/stale states retain the
+existing display, and fullscreen requires a user gesture. No new real-hardware test
+was performed; the separate frame project's older compatibility fixture is not this
+application.
+
+Local workflow: `pnpm install --frozen-lockfile`; `pnpm check` generates ignored
+environment types, typechecks Worker and frontend, builds, and runs Node unit tests.
+`pnpm dev` builds then starts Wrangler locally at `127.0.0.1:8787`. Frontend edits
+require another `pnpm build`; Wrangler handles Worker edits. `pnpm build:worker` is a
+local deploy dry run/package only. The build refuses unexpected `dist` files rather
+than removing unknown work. There is no direct deploy script; remote deployment,
+resource creation, and billing changes are not authorized. Wrangler authentication
+is managed locally, and `whoami` output is private; account authentication does not
+authorize deployment. Never send private data to this public mock, even after CLI login.
 
 ## Goals and boundaries
 

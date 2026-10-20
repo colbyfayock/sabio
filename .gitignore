@@ -12,6 +12,7 @@ coverage/
 !.dev.vars.example
 *.log
 *.tsbuildinfo
+worker-configuration.d.ts
 
 # Private runtime data and ephemeral evidence
 private/

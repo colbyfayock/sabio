@@ -20,8 +20,9 @@ frame project's guarded workflow and explicit owner approvals.
 
 ## Authorization and privacy
 
-- Current repository is a design foundation, not a working authentication service.
-  Never label pairing, access control, or real integrations implemented without tests.
+- Current repository includes an executable public LOCAL MOCK, not a working
+  authentication service. Never label pairing, access control, or real integrations
+  implemented without tests; never send private data to the mock.
 - Deny unapproved display data requests. Check authentication/authorization on every
   private route, including alternate hosts, asset fallbacks and direct API calls.
 - Store provider credentials server-side. Do not place secrets in browser bundles,
