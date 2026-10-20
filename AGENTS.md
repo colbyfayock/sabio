@@ -20,9 +20,13 @@ frame project's guarded workflow and explicit owner approvals.
 
 ## Authorization and privacy
 
-- Current repository includes an executable public LOCAL MOCK, not a working
-  authentication service. Never label pairing, access control, or real integrations
-  implemented without tests; never send private data to the mock.
+- Current repository includes a public local preview with live public Fahrenheit
+  weather and synthetic agenda/checklist data, not a working authentication service.
+  The weather endpoint is unauthenticated and sends ZIP5 to Open-Meteo; its public
+  cache is best-effort, and hashed ZIP keys are not anonymous or secret. The browser
+  stores full ZIP/ZIP+4 locally but submits only five digits in a JSON POST body.
+  Never label pairing, access control, or private integrations implemented without
+  tests; never send private account data or credentials to the preview.
 - Deny unapproved display data requests. Check authentication/authorization on every
   private route, including alternate hosts, asset fallbacks and direct API calls.
 - Store provider credentials server-side. Do not place secrets in browser bundles,
@@ -39,8 +43,13 @@ frame project's guarded workflow and explicit owner approvals.
 - No credentials, device identifiers, account/calendar IDs, real schedules/photos,
   private feed URLs, database dumps, or access tokens in tracked examples/fixtures.
 - Ignored files are not a security boundary. Review every staged file before push.
-- No deployment, paid-plan upgrade, billing change, production migration, account
-  authorization, or real data-source connection without an explicit owner scope.
+- Live public weather is explicitly in scope for the local preview. Its Open-Meteo
+  free API is non-commercial only; commercial use requires an appropriate paid plan
+  and separate explicit owner approval. No deployment, paid-plan upgrade, billing
+  change, production migration, account authorization, private data-source connection,
+  or frame operation without its own explicit owner scope. Before deploying the
+  unauthenticated weather route, agree on authentication and rate/abuse boundaries
+  and review production observability/redaction.
 
 ## Screenshots
 

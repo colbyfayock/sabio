@@ -35,7 +35,7 @@ test('public demo is explicitly synthetic and does not require credentials', asy
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.mode, 'demo');
-  assert.equal(data.weather.locationLabel, 'Sample weather');
+  assert.equal(data.weather, undefined);
   assert.equal(data.events.length, 3);
   assert.equal(data.tasks.length, 3);
   assert.ok(Number.isFinite(Date.parse(data.updatedAt)));
@@ -83,11 +83,50 @@ test('enrollment and admin endpoints never pretend successful authentication', a
 
 test('unknown APIs and files do not fall through to HTML or an asset binding', async () => {
   const { env, requests } = assets();
-  for (const path of ['/api', '/api/unknown', '/.env', '/worker-configuration.d.ts', '/src/index.ts', '/anything']) {
+  for (const path of ['/api', '/api/unknown', '/.env', '/worker-configuration.d.ts', '/src/index.ts', '/anything', '/.weather-cache/v1/synthetic']) {
     const response = await worker.fetch(new Request(`https://example.com${path}`), env);
     assert.equal(response.status, 404);
     assert.equal((await response.json()).error, 'not_found');
   }
+  assert.equal(requests.length, 0);
+});
+
+test('weather route rejects URL ZIPs, cross-origin requests and non-JSON input without asset fallback', async () => {
+  const { env, requests } = assets();
+  const cases = [
+    [new Request('https://example.com/api/weather'), 405],
+    [new Request('https://example.com/api/weather?zipCode=00000', { method: 'POST' }), 400],
+    [new Request('https://example.com/api/weather', { method: 'POST', headers: { Origin: 'https://other.example.com' } }), 403],
+    [new Request('https://example.com/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'zipCode=00000' }), 415],
+    [new Request('https://example.com/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"zipCode":"not-a-zip"}' }), 400],
+  ];
+  for (const [request, status] of cases) {
+    const response = await worker.fetch(request, env);
+    assert.equal(response.status, status);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
+    assert.ok(!(await response.text()).includes('00000'));
+  }
+  assert.equal(requests.length, 0);
+});
+
+test('weather route applies the same no-store/security policy to validated live results', async (t) => {
+  const { env, requests } = assets();
+  const now = Math.floor(Date.now() / 1000);
+  t.mock.method(globalThis, 'fetch', async (input) => {
+    const url = new URL(input);
+    const body = url.hostname === 'geocoding-api.open-meteo.com'
+      ? { results: [{ name: 'Sample Town', country_code: 'US', postcodes: ['00000'], latitude: 40, longitude: -75 }] }
+      : { current: { time: now, temperature_2m: 70, weather_code: 0 }, current_units: { temperature_2m: '°F' }, daily: { temperature_2m_max: [75], temperature_2m_min: [60] }, daily_units: { temperature_2m_max: '°F', temperature_2m_min: '°F' } };
+    return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+  });
+  const response = await worker.fetch(new Request('https://example.com/api/weather', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' }, body: '{"zipCode":"00000"}',
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+  assert.equal((await response.json()).unit, 'fahrenheit');
   assert.equal(requests.length, 0);
 });
 

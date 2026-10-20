@@ -2,13 +2,6 @@
 export interface DemoDashboard {
   mode: 'demo';
   updatedAt: string;
-  weather: {
-    temperatureCelsius: number;
-    condition: string;
-    highCelsius: number;
-    lowCelsius: number;
-    locationLabel: string;
-  };
   events: Array<{
     id: string;
     time: string;

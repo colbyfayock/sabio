@@ -21,8 +21,8 @@ test('local preview uses loopback and config has no provisioned or remote data b
   }
 });
 
-test('structured observability is configured without automatic invocation URL logging', () => {
+test('location requests do not enable automatic URL logging or outbound URL traces', () => {
   assert.equal(config.observability.enabled, true);
   assert.equal(config.observability.logs.invocation_logs, false);
-  assert.equal(config.observability.traces.enabled, true);
+  assert.equal(config.observability.traces.enabled, false);
 });

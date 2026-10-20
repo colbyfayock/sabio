@@ -1,4 +1,5 @@
 import { createDemoDashboard } from './demo';
+import { getWeatherForZip, requestZip, WeatherError } from './weather';
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -35,8 +36,30 @@ export default {
         return json(request, { error: 'method_not_allowed' }, 405, { Allow: 'GET, HEAD' });
       }
       return json(request, path === '/health'
-        ? { status: 'ok', mode: 'demo', authentication: 'not_implemented' }
+        ? { status: 'ok', mode: 'preview', authentication: 'not_implemented' }
         : createDemoDashboard());
+    }
+
+    if (path === '/api/weather') {
+      if (request.method !== 'POST') return json(request, { error: 'method_not_allowed' }, 405, { Allow: 'POST' });
+      const url = new URL(request.url);
+      if (url.search) return json(request, { error: 'invalid_request' }, 400);
+      const origin = request.headers.get('Origin');
+      if (origin && origin !== url.origin) return json(request, { error: 'origin_not_allowed' }, 403);
+      try {
+        const zipCode = await requestZip(request);
+        const weather = await getWeatherForZip(zipCode, {
+          cache: typeof caches === 'undefined' ? undefined : caches.default,
+          origin: url.origin,
+        });
+        return json(request, weather);
+      } catch (error) {
+        if (error instanceof WeatherError) {
+          return json(request, { error: error.code }, error.status,
+            error.status === 429 ? { 'Retry-After': '600' } : {});
+        }
+        return json(request, { error: 'weather_unavailable' }, 502);
+      }
     }
 
     // No cookie, query string, or forged identity header enables private access in this milestone.

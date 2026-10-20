@@ -1,3 +1,7 @@
+import { normalizeZipCode } from '../shared/zip';
+
+export { normalizeZipCode } from '../shared/zip';
+
 export const LOCATION_STORAGE_KEY = 'sabio.location.v1';
 
 const LOCATION_RECORD_VERSION = 2;
@@ -24,20 +28,6 @@ function getStorage(source: LocationStorageSource): LocationStorage {
     throw new Error('Location storage is unavailable');
   }
   return storage;
-}
-
-export function normalizeZipCode(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint === undefined || (codePoint >= 0 && codePoint <= 0x1f) ||
-        (codePoint >= 0x7f && codePoint <= 0x9f) ||
-        (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
-  }
-
-  const zipCode = value.trim();
-  return /^[0-9]{5}(?:-[0-9]{4})?$/.test(zipCode) ? zipCode : null;
 }
 
 export function readLocationPreference(source: LocationStorageSource): StoredLocationResult {
@@ -94,6 +84,7 @@ export function resetLocationPreference(source: LocationStorageSource): boolean 
 export interface LocationControls {
   getCurrentLabel(): string;
   setDefaultLabel(label: string): void;
+  getSelectedZipCode(): string | null;
 }
 
 function focusIfAvailable(element: HTMLElement | null): void {
@@ -107,7 +98,7 @@ function focusIfAvailable(element: HTMLElement | null): void {
   }
 }
 
-export function initializeLocationControls(defaultLabel = 'Sample location'): LocationControls {
+export function initializeLocationControls(defaultLabel = 'Weather location', onChange?: (zipCode: string | null) => void): LocationControls {
   const storageSource = () => window.localStorage;
   const preference = readLocationPreference(storageSource);
   let selectedZipCode = preference.zipCode;
@@ -200,8 +191,9 @@ export function initializeLocationControls(defaultLabel = 'Sample location'): Lo
       if (persisted) hasStoredPreference = true;
       renderLabel();
       closeDialog();
+      onChange?.(selectedZipCode);
       announce(persisted
-        ? 'ZIP code saved in this browser.'
+        ? 'ZIP code saved in this browser. Weather requests use its first five digits.'
         : 'ZIP code set for this visit only; browser storage is unavailable.');
     };
 
@@ -217,8 +209,9 @@ export function initializeLocationControls(defaultLabel = 'Sample location'): Lo
         if (removed) hasStoredPreference = false;
         renderLabel();
         closeDialog();
+        onChange?.(null);
         announce(removed
-          ? 'ZIP code reset to the sample default.'
+          ? 'ZIP code reset; no weather location is selected.'
           : 'ZIP code reset for this visit; browser storage could not be cleared.');
       });
     }
@@ -253,6 +246,7 @@ export function initializeLocationControls(defaultLabel = 'Sample location'): Lo
 
   return {
     getCurrentLabel: currentLabel,
+    getSelectedZipCode: () => selectedZipCode,
     setDefaultLabel(label: string): void {
       fallbackLabel = label;
       renderLabel();

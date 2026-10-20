@@ -5,10 +5,11 @@ displays. The name is Brazilian-inspired, from Portuguese *sábio* (wise).
 
 ## Status
 
-The executable **LOCAL MOCK** milestone is implemented: a local Worker serves a
-synthetic dashboard and public mock API. This is not auth-ready: there is no pairing,
-authentication, private data path, or live integration. Do not put personal data or
-credentials into the app, even if Wrangler is authenticated locally.
+The executable **LOCAL PREVIEW** serves synthetic agenda/checklist data and live
+public weather when a US ZIP is selected. Weather uses an unauthenticated public
+endpoint; this does not implement pairing, authentication, or a private-data path.
+Do not put personal account data or credentials into the app, even if Wrangler is
+authenticated locally.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
 The application should also support approved modern browsers. The old frame remains
@@ -48,7 +49,7 @@ pairing code for the administrator to approve, then receives a limited, revocabl
 browser session. Approval identifies a browser credential, **not cryptographic
 proof of a physical device**. Main provider credentials never belong on the frame.
 
-See [architecture](docs/architecture.md) for the implemented local mock boundary and
+See [architecture](docs/architecture.md) for the implemented local preview boundary and
 future trust boundaries, and [security](SECURITY.md) for reporting guidance.
 
 ## Free-tier target
@@ -105,8 +106,8 @@ Run `pnpm install --frozen-lockfile`, then `pnpm check` for generated local type
 Worker and frontend typechecks, build, and Node tests. `pnpm dev` builds and starts
 Wrangler locally on `127.0.0.1:8787`; Worker changes are handled by Wrangler, but
 frontend edits require `pnpm build` again. The build refuses unexpected files in
-`dist` rather than deleting them. Public examples and this mock app must never contain
-private data.
+`dist` rather than deleting them. Public examples must never contain private account
+data; the only approved location submission is the ZIP5 weather request described below.
 
 ```sh
 pnpm check
@@ -114,14 +115,16 @@ pnpm dev
 # Open http://127.0.0.1:8787 on this computer.
 ```
 
-The mock UI uses the browser-local clock and synthetic weather, agenda, and checklist
-content. It polls every 60 seconds with a 12-second timeout and backoff up to five
-minutes; checkboxes are in-memory only. Retry/offline/stale-data states retain displayed
-data, and fullscreen requires a user gesture. Static HTML, CSS, app JavaScript, and
-favicon are public; `/api/demo` and `/health` are public, `/api/display` returns 401
-regardless of fake cookies, enrollment/admin/auth routes return 503, and other API or
-static misses return 404 before asset fallback. There are no backend, provider-data,
-storage, or credential bindings. Do not treat any route as protecting personal data.
+The preview uses the browser-local clock and synthetic agenda/checklist content.
+`/api/demo` supplies those data; `/health` is public. Agenda polling uses a 60-second
+interval, 12-second timeout, and backoff up to five minutes; checkbox state is
+in-memory only. Weather loads independently through `POST /api/weather` when a ZIP is
+saved, refreshes every 10 minutes, and retries with backoff up to 30 minutes. It has
+its own 12-second browser timeout, shows timestamps/stale status, and does not fall
+back to sample weather. `/api/display` returns 401 regardless of fake cookies,
+enrollment/admin/auth routes return 503, and other API or static misses return 404
+before asset fallback. The public weather endpoint is not an authorization boundary;
+do not treat any route as protecting personal data.
 
 ### Weather ZIP code
 
@@ -132,20 +135,38 @@ removes only Sabio's location preference.
 If browser storage is unavailable, the UI explains that the choice lasts only for
 the current visit. Cancel/Escape leave the saved choice unchanged.
 
-This is a **display label only**: the forecast remains synthetic. There is no GPS
-request, geocoding, automatic weather lookup, or ZIP submission to the Worker or
-another service. Browser-local storage is not secret storage or protection from root
-access to the display. Old city-label records are not interpreted as ZIP codes;
+Saving a ZIP requests live weather. The browser stores the entered value locally
+and sends only its first five digits in the JSON body of
+`POST /api/weather` (not the URL). The Worker geocodes through Open-Meteo, requires an
+exact US postcode match, then requests a Fahrenheit forecast. It validates provider
+responses and freshness, and uses a best-effort 10-minute public cache keyed by a
+SHA-256 hash of the ZIP5. That hash is not anonymous or secret. The Worker has no
+cookies, authentication, calendar access, or private-user records on this route.
+
+Open-Meteo receives the ZIP5 for geocoding and the resulting coordinates for forecast
+requests, along with ordinary network metadata. Local development requests originate
+from the Mac; cloud hosting is not a promise of anonymity. Its terms state that
+provider logs may retain coordinates for up to 90 days:
+[Open-Meteo terms](https://open-meteo.com/en/terms). The current free API is for
+non-commercial use, subject to published request limits (10,000/day, 5,000/hour,
+600/minute); commercial use requires an appropriate paid plan and separate owner
+approval. Open-Meteo data uses CC BY 4.0; GeoNames attribution is shown in the UI.
+No API key is used. Provider/cache availability is best effort, not guaranteed.
+
+No GPS is requested. Browser-local storage is not secret storage or protection from
+root access to the display. Old city-label records are not interpreted as ZIP codes;
 explicitly saving replaces the owned record with the ZIP schema, and Reset removes it.
 
 ### Validation status
 
-- 33 Node tests cover routing/denial, response policy, payload validation, text-only
+- Node tests cover routing/denial, response policy, weather provider/request/cache
+  validation, payload validation, text-only
   rendering, poll backoff/timeouts/offline recovery, in-memory tasks, and fullscreen
   state/error handling. These are unit tests, not old-browser emulation.
 - ZIP tests cover ZIP5/ZIP+4 syntax, leading zeros, old city-record handling, storage
-  errors, persistence across refresh, cancel/reset/focus, and local-only changes.
-- Actual local `workerd` smoke checks passed for 11 asset/API/error routes.
+  errors, persistence across refresh, cancel/reset/focus, and the location request flow.
+- Actual local `workerd` smoke checks passed for asset/API/error routes, including a
+  live weather response for a public reference ZIP (not an owner's location).
 - Local Chromium checks passed for 1280×800 layout, fullscreen entry/exit, checklist
   preservation after refresh, failed-refresh data retention, and a 390-pixel layout.
 - Automated desktop accessibility checks reported zero violations and no incomplete

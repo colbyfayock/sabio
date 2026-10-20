@@ -1,5 +1,6 @@
 import type { DemoDashboard } from '../shared/dashboard';
 import { initializeLocationControls } from './location';
+import { initializeWeatherController } from './weather';
 
 const POLL_INTERVAL = 60000;
 const REQUEST_TIMEOUT = 12000;
@@ -14,7 +15,9 @@ const retryButton = document.getElementById('retry-button') as HTMLButtonElement
 const fullscreenButton = document.getElementById('fullscreen-toggle') as HTMLButtonElement | null;
 const fullscreenLabel = document.getElementById('fullscreen-label');
 const taskState = new Map<string, boolean>();
-const locationControls = initializeLocationControls();
+let weatherController: ReturnType<typeof initializeWeatherController> | null = null;
+const locationControls = initializeLocationControls('Weather location', (zipCode) => weatherController?.setZipCode(zipCode));
+weatherController = initializeWeatherController(() => locationControls.getSelectedZipCode());
 
 let pollTimer: number | null = null;
 let inFlight = false;
@@ -41,20 +44,11 @@ function boundedString(value: unknown, maximum: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
 }
 
-function isSampleTemperature(value: unknown): boolean {
-  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 100;
-}
-
 function isDemoDashboard(value: unknown): value is DemoDashboard {
   if (!isRecord(value) || value.mode !== 'demo' || !boundedString(value.updatedAt, 80) ||
-      !Number.isFinite(Date.parse(value.updatedAt)) || !isRecord(value.weather) ||
+      !Number.isFinite(Date.parse(value.updatedAt)) ||
       !Array.isArray(value.events) || value.events.length > 8 ||
       !Array.isArray(value.tasks) || value.tasks.length > 12 || !boundedString(value.note, 240)) return false;
-
-  const weather = value.weather;
-  if (!isSampleTemperature(weather.temperatureCelsius) || !isSampleTemperature(weather.highCelsius) ||
-      !isSampleTemperature(weather.lowCelsius) || !boundedString(weather.condition, 80) ||
-      !boundedString(weather.locationLabel, 100)) return false;
 
   const eventIds = new Set<string>();
   for (const event of value.events) {
@@ -130,11 +124,6 @@ function renderTasks(tasks: DemoDashboard['tasks']): void {
 }
 
 function renderDashboard(data: DemoDashboard): void {
-  const weather = data.weather;
-  locationControls.setDefaultLabel(weather.locationLabel);
-  setText('temperature', `${Math.round(weather.temperatureCelsius)}°C`);
-  setText('condition', weather.condition);
-  setText('weather-range', `H ${Math.round(weather.highCelsius)}° · L ${Math.round(weather.lowCelsius)}°`);
   setText('demo-note', data.note);
   renderEvents(data.events);
   renderTasks(data.tasks);
@@ -200,13 +189,13 @@ async function poll(): Promise<void> {
     hasGoodData = true;
     lastSuccessAt = Date.now();
     consecutiveFailures = 0;
-    setStatus('updated', 'Demo data updated', formatAge(lastSuccessAt));
+    setStatus('updated', 'Demo agenda updated', formatAge(lastSuccessAt));
     schedulePoll(POLL_INTERVAL);
   } catch {
     consecutiveFailures += 1;
     const delay = Math.min(POLL_INTERVAL * Math.pow(2, consecutiveFailures - 1), MAX_BACKOFF);
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    setStatus(offline ? 'offline' : hasGoodData ? 'stale' : 'waiting', offline ? 'Offline' : hasGoodData ? 'Showing last sample' : 'Sample data unavailable', hasGoodData ? formatAge(lastSuccessAt) : `Retrying in ${Math.ceil(delay / 1000)}s`);
+    setStatus(offline ? 'offline' : hasGoodData ? 'stale' : 'waiting', offline ? 'Offline' : hasGoodData ? 'Showing last demo agenda' : 'Demo agenda unavailable', hasGoodData ? formatAge(lastSuccessAt) : `Retrying in ${Math.ceil(delay / 1000)}s`);
     if (!offline) schedulePoll(delay);
   } finally {
     inFlight = false;

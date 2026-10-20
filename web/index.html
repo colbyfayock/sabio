@@ -20,7 +20,7 @@
           <span>sabio<span class="wordmark-period">.</span></span>
         </a>
         <div class="topbar-tools">
-          <span class="demo-badge"><span class="badge-dot"></span>Demo / sample data</span>
+          <span class="demo-badge"><span class="badge-dot"></span>Preview / demo agenda</span>
           <button class="fullscreen-button" id="fullscreen-toggle" type="button" aria-pressed="false">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4M13 3h4v4M17 13v4h-4M3 13v4h4"/></svg>
             <span id="fullscreen-label">Enter fullscreen</span>
@@ -41,23 +41,27 @@
             <p id="date" class="date-line">Checking your local time…</p>
           </div>
 
-          <section class="weather-card" aria-label="Sample weather">
+          <section class="weather-card" aria-label="Live weather">
             <div class="weather-symbol" aria-hidden="true">
-              <svg viewBox="0 0 64 64"><circle cx="32" cy="31" r="12"/><path d="M32 5v8M32 51v8M6 31h8M50 31h8M13.6 12.6l5.7 5.7M44.7 44.7l5.7 5.7M50.4 12.6l-5.7 5.7M19.3 44.7l-5.7 5.7"/></svg>
+              <svg viewBox="0 0 64 64"><path d="M25 37V13a7 7 0 0 1 14 0v24a13 13 0 1 1-14 0Z"/><path d="M32 20v25M32 48a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg>
             </div>
             <div class="weather-main">
-              <p class="weather-label">A little outside</p>
-              <p class="temperature" id="temperature">Waiting for sample weather</p>
-              <p class="condition" id="condition">Demo forecast</p>
-              <p class="sample-forecast-tag">Sample forecast</p>
+              <p class="weather-label">Weather</p>
+              <p class="temperature" id="temperature">—°F</p>
+              <p class="condition" id="condition">Set ZIP to load weather</p>
             </div>
-            <div class="weather-range" id="weather-range">—</div>
+            <div class="weather-range" id="weather-range">H —°F · L —°F</div>
             <div class="weather-location-row">
-              <p class="weather-location" id="weather-location">Sample location</p>
+              <p class="weather-location" id="weather-location">Weather location</p>
               <button class="location-open" id="location-open" type="button">Set ZIP code</button>
             </div>
+            <div class="weather-footer">
+              <p class="weather-status" id="weather-status" role="status" aria-live="polite">No ZIP selected.</p>
+              <button class="weather-retry" id="weather-retry" type="button">Retry weather</button>
+            </div>
           </section>
-          <p class="weather-note" id="demo-note">Forecast shown for demonstration only.</p>
+          <p class="weather-resolved" id="weather-resolved"></p>
+          <p class="weather-note" id="demo-note">Agenda and checklist are sample content.</p>
           <p class="location-status" id="location-status" role="status" aria-live="polite"></p>
         </section>
 
@@ -82,7 +86,7 @@
               </div>
               <svg class="ritual-spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1"/></svg>
             </div>
-            <p class="ritual-caption">A mock checklist, just for this visit. Nothing is saved.</p>
+            <p class="ritual-caption">Sample checklist, just for this visit. Nothing is saved.</p>
             <ul class="task-list" id="task-list" aria-label="Sample checklist"></ul>
             <p class="task-empty" id="task-empty">Sample checklist is loading.</p>
           </section>
@@ -97,7 +101,8 @@
         </div>
         <div class="footer-actions">
           <button class="retry-button" id="retry-button" type="button">Retry now</button>
-          <span class="pairing-note">Pairing isn’t available in this demo.</span>
+          <span class="pairing-note">Agenda and checklist are previews.</span>
+          <span class="weather-attribution">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · Geocoding by <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span>
         </div>
       </footer>
       <p class="fullscreen-message" id="fullscreen-message" role="status" aria-live="polite"></p>
@@ -106,11 +111,11 @@
       <section class="location-panel">
         <p class="eyebrow">A small detail</p>
         <h2 id="location-dialog-title">Set your ZIP code</h2>
-        <p id="location-description" class="location-description">This sets a display label only. Live weather isn’t connected yet.</p>
+        <p id="location-description" class="location-description">The first five digits go to this server and Open-Meteo for weather. The ZIP+4 extension stays in this browser.</p>
         <form id="location-form" novalidate>
           <label class="location-field-label" for="location-input">US ZIP code</label>
           <input id="location-input" type="text" inputmode="numeric" maxlength="10" autocomplete="off" spellcheck="false" placeholder="e.g. 00000" aria-describedby="location-input-hint location-error">
-          <p class="location-input-hint" id="location-input-hint">Enter 5 digits or ZIP+4 (00000-0000). US ZIP codes only. This preference stays in this browser.</p>
+          <p class="location-input-hint" id="location-input-hint">Enter 5 digits or ZIP+4 (00000-0000). US ZIP codes only. The ZIP+4 extension stays in this browser.</p>
           <p class="location-error" id="location-error" role="alert" aria-live="assertive" hidden></p>
           <div class="location-dialog-actions">
             <button class="location-reset" id="location-reset" type="button" hidden>Reset ZIP code</button>

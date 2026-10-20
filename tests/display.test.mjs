@@ -9,7 +9,6 @@ const compiled = await build({
 const source = compiled.outputFiles[0].text;
 const fixture = () => ({
   mode: 'demo', updatedAt: '2026-10-20T12:00:00.000Z',
-  weather: { temperatureCelsius: 24, condition: 'Mostly sunny', highCelsius: 26, lowCelsius: 18, locationLabel: 'Sample weather' },
   events: [{ id: 'one', time: '09:00', title: 'Sample event', detail: 'Not connected' }],
   tasks: [{ id: 'plants', title: 'Water the plants', completed: false }],
   note: 'Sample content only.',
@@ -86,13 +85,14 @@ function browser() {
   return instance;
 }
 
-test('display fetches only public same-origin demo without credentials and starts a real clock', async () => {
+test('display fetches the public demo without credentials, leaves weather empty without a ZIP, and starts a real clock', async () => {
   const page = browser();
   page.start();
   await page.settle();
   assert.equal(page.calls[0][0], '/api/demo');
   assert.equal(page.calls[0][1].credentials, 'omit');
-  assert.equal(page.element('temperature').textContent, '24°C');
+  assert.equal(page.element('temperature').textContent, '—°F');
+  assert.equal(page.calls.length, 1);
   assert.notEqual(page.element('clock').textContent, '');
   assert.equal(page.status.dataset.state, 'updated');
   assert.equal(page.hasTimer(60000), true);
@@ -131,7 +131,7 @@ test('failed refresh retains prior data and bounds exponential backoff', async (
   await page.settle();
   page.respond = async () => new Response('{}', { status: 503 });
   for (const delay of [60000, 60000, 120000, 240000, 300000, 300000]) await page.runTimer(delay);
-  assert.equal(page.element('temperature').textContent, '24°C');
+  assert.equal(page.element('temperature').textContent, '—°F');
   assert.equal(page.status.dataset.state, 'stale');
   assert.equal(page.hasTimer(300000), true);
 });
@@ -143,7 +143,7 @@ test('invalid data is rejected without clearing the last good display', async ()
   for (const mutate of [
     (data) => { data.mode = 'private'; },
     (data) => { data.tasks.push({ ...data.tasks[0] }); },
-    (data) => { data.weather.temperatureCelsius = 'warm'; },
+    (data) => { data.tasks[0].completed = 'yes'; },
     (data) => { data.updatedAt = 'not a date'; },
     (data) => { data.events = Array(9).fill(data.events[0]); },
   ]) {
@@ -153,7 +153,7 @@ test('invalid data is rejected without clearing the last good display', async ()
     page.element('retry-button').fire('click');
     await page.settle();
     assert.equal(page.status.dataset.state, 'stale');
-    assert.equal(page.element('temperature').textContent, '24°C');
+    assert.equal(page.element('temperature').textContent, '—°F');
   }
 });
 
@@ -240,7 +240,7 @@ function locationStorage() {
   };
 }
 
-test('ZIP save is local-only, survives polling/reload, and rejects markup as a ZIP', async () => {
+test('ZIP preference survives polling/reload, starts weather lookup, and rejects markup as a ZIP', async () => {
   const storage = locationStorage();
   storage.setItem('sabio.location.v1', JSON.stringify({ version: 2, zipCode: '00000' }));
   const page = browser();
@@ -264,7 +264,7 @@ test('ZIP save is local-only, survives polling/reload, and rejects markup as a Z
   assert.equal(page.element('weather-location').children.length, 0);
   assert.equal(page.element('location-dialog').hidden, true);
   assert.equal(page.document.activeElement, page.element('location-open'));
-  assert.equal(page.calls.length, requestCount);
+  assert.equal(page.calls.length, requestCount + 1);
   await page.runTimer(60000);
   assert.equal(page.element('weather-location').textContent, 'ZIP 00000-0000');
 
@@ -319,7 +319,7 @@ test('legacy preference is not used and can be explicitly reset', async () => {
   page.window.localStorage = storage;
   page.start();
   await page.settle();
-  assert.equal(page.element('weather-location').textContent, 'Sample weather');
+  assert.equal(page.element('weather-location').textContent, 'Weather location');
   assert.match(page.element('location-status').textContent, /preferences that are not ZIP codes are not used/);
   assert.equal(storage.getItem('sabio.location.v1'), legacy);
   page.element('location-open').fire('click');
@@ -329,7 +329,7 @@ test('legacy preference is not used and can be explicitly reset', async () => {
   page.element('location-open').fire('click');
   page.element('location-reset').fire('click');
   assert.equal(storage.getItem('sabio.location.v1'), null);
-  assert.equal(page.element('weather-location').textContent, 'Sample weather');
+  assert.equal(page.element('weather-location').textContent, 'Weather location');
 });
 
 test('a failed reset keeps the reset control available for a newly saved ZIP', async () => {
@@ -361,7 +361,7 @@ test('reset removes only the location key and blocked persistence keeps a visibl
   page.element('location-reset').fire('click');
   assert.equal(storage.getItem('sabio.location.v1'), null);
   assert.equal(storage.getItem('unrelated.test.key'), 'untouched');
-  assert.equal(page.element('weather-location').textContent, 'Sample weather');
+  assert.equal(page.element('weather-location').textContent, 'Weather location');
 
   const blocked = browser();
   Object.defineProperty(blocked.window, 'localStorage', { get() { throw new Error('Blocked'); } });

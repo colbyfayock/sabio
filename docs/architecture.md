@@ -1,36 +1,64 @@
 # Architecture and implementation direction
 
-Status: **LOCAL MOCK executable milestone** implemented; the authorization and
-integration architecture below is proposed design, not an implemented security
-guarantee. No remote deployment is authorized or implied.
+Status: **LOCAL PREVIEW** implemented with live public Fahrenheit weather and
+synthetic agenda/checklist data. Authorization and private-integration architecture
+below is proposed design, not an implemented security guarantee. No remote deployment
+is authorized or implied.
 
 ## Current local implementation
 
 Wrangler runs the Worker before asset handling (`run_worker_first`); there is no SPA
-fallback. The Worker exposes public synthetic JSON at `/api/demo` and public `/health`;
-`/api/display` returns 401 independently of fake cookies. `/api/enrollment`, `/api/admin`,
-`/admin`, and `/auth` subpaths return 503. Unknown API and static paths return 404
-before the asset binding. The public static allowlist is HTML, CSS, app JavaScript, and
-favicon. There are no backend/provider-data/storage bindings or credentials.
+fallback. The Worker exposes synthetic JSON at public `/api/demo`, public `/health`,
+and public unauthenticated `POST /api/weather`. `/api/display` returns 401 independently
+of fake cookies. `/api/enrollment`, `/api/admin`, `/admin`, and `/auth` subpaths return
+503. Unknown API and static paths return 404 before the asset binding. The public
+static allowlist is HTML, CSS, app JavaScript, and favicon. There are no private-data,
+storage, or credential bindings.
 
 The IIFE frontend targets Firefox 68 at build time but is not validated on actual
-Firefox 68 hardware. It shows synthetic weather, agenda, and checklist data using the
-browser-local clock. It polls every 60 seconds with a 12-second timeout and backoff up
-to five minutes; checkbox state is in memory. Retry/offline/stale states retain the
-existing display, and fullscreen requires a user gesture. No new real-hardware test
-was performed; the separate frame project's older compatibility fixture is not this
-application.
+Firefox 68 hardware. It shows synthetic agenda/checklist data using the browser-local
+clock; checkbox state is in memory. Agenda polls every 60 seconds with a 12-second
+timeout and backoff up to five minutes. Weather loads independently and refreshes
+every 10 minutes, with a 12-second timeout and backoff up to 30 minutes. The UI shows
+timestamps and stale status, clears old data on ZIP change/reset, and has no sample
+weather fallback. Fullscreen requires a user gesture. No new real-hardware test was
+performed; the separate frame project's older compatibility fixture is not this app.
 
-Display location is currently a browser-local US ZIP code, not a weather API
-integration. The weather-card editor saves a version-2 `{ version, zipCode }` preference
-under the existing `sabio.location.v1` namespace and overrides the sample location label
-across polls. ZIP5/ZIP+4 syntax is validated as text to preserve leading zeros, not
-verified against a real postal database. Old city records are ignored, not guessed
-into ZIPs, and are replaced/removed only on explicit Save/Reset. It never submits the
-ZIP, uses GPS, or geocodes. Reset removes only the owned key; blocked
-storage falls back to in-memory state with a visible warning. This is not server
-storage, an authenticated preference, or protected personal data. Provider-backed
-location search/forecast and trusted per-display settings remain future work.
+Display location is a browser-local US ZIP code. The editor saves a version-2
+`{ version, zipCode }` preference under `sabio.location.v1`; ZIP5/ZIP+4 syntax is
+validated as text to preserve leading zeros, not verified against a postal database.
+The browser sends only the first five digits using JSON body `{ zipCode: ZIP5 }` to
+`POST /api/weather`; location values in the query string are rejected. The endpoint
+requires POST, JSON content type, exactly one string property, and same-origin requests
+when an Origin header is present. It has bounded request bodies and no cookies,
+authentication, calendar access, or private-user records.
+
+The Worker geocodes with Open-Meteo, accepts only an exact returned postcode and US
+country code, and then requests current conditions and daily high/low with
+`temperature_unit=fahrenheit`. It validates response size/shape, units, finite
+temperature ranges, and freshness. Provider hosts and request parameters are fixed;
+redirects are not followed. Responses are `no-store`, and error/log payloads do not
+include ZIP, coordinates, or provider URLs. Outbound traces are disabled to avoid
+exporting provider query URLs; production redaction and observability require review.
+
+Open-Meteo receives ZIP5 for geocoding and the resolved coordinates for forecast
+requests and ordinary network metadata. Local development requests originate from
+the Mac; cloud hosting is not a promise of anonymity. Its terms state that
+coordinates may be retained in provider logs for up to 90 days:
+[Open-Meteo terms](https://open-meteo.com/en/terms). A best-effort public Cache API
+stores forecasts for 10 minutes under SHA-256-derived area keys; those hashes are
+not anonymous or secret. Cache behavior/availability can vary by data center and local
+runtime and is not guaranteed. This route does not use cookies, D1, or provision
+resources. Open-Meteo's free API is non-commercial only, with published limits of
+10,000/day, 5,000/hour, and 600/minute. Commercial use needs an appropriate paid plan
+and explicit approval. No API key is used. Open-Meteo data is CC BY 4.0; GeoNames
+attribution is shown in the UI.
+
+Old city records are ignored, not guessed into ZIPs, and are replaced/removed only on
+explicit Save/Reset. Reset removes only the owned key; blocked storage falls back to
+in-memory state with a visible warning. The entered ZIP+4 preference is not stored as
+a server-side user setting; the public forecast cache is separate. This is not an
+authenticated preference or protected identity. Trusted per-display settings remain future work.
 
 Local workflow: `pnpm install --frozen-lockfile`; `pnpm check` generates ignored
 environment types, typechecks Worker and frontend, builds, and runs Node unit tests.
@@ -76,6 +104,11 @@ Do not move its diagnostics, private records, or compatibility fixture into Sabi
 - Is not an arbitrary URL proxy. Restrict integration destinations and guard redirects,
   request volume, parsing and payload size. Untrusted strings must not become markup.
 
+The implemented weather route is an unauthenticated public-data exception, not a
+private-data route or security approval. Before any deployment, agree authentication
+and rate/abuse boundaries and review production observability. This endpoint processes
+location data and does not authorize access to, or deployment on, a frame.
+
 ### Storage
 
 - D1 is the initial candidate for display registrations, bounded enrollment state,
@@ -110,12 +143,13 @@ can impersonate its browser, especially on a root-accessible frame. MAC addresse
 serial-number strings, user agents and home public-IP allowlists do not prove identity.
 Do not assume modern WARP/device posture or login flows work on Android 4.4/Firefox 68.
 
-## Real-data integration sequence
+## Integration status and future sequence
 
-1. Public weather through the Worker; cache and handle provider errors/rate limits.
-2. Optional selected calendar with minimum read-only scope, authorized on the trusted
+1. **Implemented locally:** public weather through the Worker, with bounded caching,
+   provider-response validation, and visible error/stale states as described above.
+2. **Future:** optional selected calendar with minimum read-only scope, authorized on the trusted
    admin device. Private ICS links are secrets, not public frontend configuration.
-3. Optional tasks/other integrations after agreeing display data scope and any writes.
+3. **Future:** optional tasks/other integrations after agreeing display data scope and any writes.
 
 Cloudflare and the upstream providers process the chosen data. The frame can read
 anything displayed to it even if master credentials are kept off the device.
@@ -138,8 +172,9 @@ Handle quota exhaustion safely. No paid services or billing changes without appr
 3. **Owner-approved mock-only deployment:** verify HTTPS, cookie persistence, pairing
    and fullscreen on the real Firefox 68 device; deny a separate unapproved browser.
    Test default/custom/preview hosts so no alternate route exposes private data.
-4. **Public weather integration:** server-side keys if needed, bounded caching and
-   clear error/stale states. No account login on the frame.
+4. **Public weather hardening/deployment review:** agree on auth and rate/abuse
+   boundaries, production observability/redaction, and provider plan suitability before
+   any deployment. The current local route is unauthenticated and no deployment is authorized.
 5. **Private integrations:** agree on minimal displayed fields, data retention,
    OAuth/token handling and additional security requirements first.
 

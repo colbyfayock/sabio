@@ -27,4 +27,4 @@ await build({
   sourcemap: false,
   legalComments: 'none',
 });
-console.log('Built static mock display for Firefox 68; no cloud resources touched.');
+console.log('Built Firefox 68 display; no cloud resources created.');
