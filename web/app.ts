@@ -1,4 +1,5 @@
 import type { DemoDashboard } from '../shared/dashboard';
+import { initializeLocationControls } from './location';
 
 const POLL_INTERVAL = 60000;
 const REQUEST_TIMEOUT = 12000;
@@ -13,6 +14,7 @@ const retryButton = document.getElementById('retry-button') as HTMLButtonElement
 const fullscreenButton = document.getElementById('fullscreen-toggle') as HTMLButtonElement | null;
 const fullscreenLabel = document.getElementById('fullscreen-label');
 const taskState = new Map<string, boolean>();
+const locationControls = initializeLocationControls();
 
 let pollTimer: number | null = null;
 let inFlight = false;
@@ -129,10 +131,10 @@ function renderTasks(tasks: DemoDashboard['tasks']): void {
 
 function renderDashboard(data: DemoDashboard): void {
   const weather = data.weather;
+  locationControls.setDefaultLabel(weather.locationLabel);
   setText('temperature', `${Math.round(weather.temperatureCelsius)}°C`);
   setText('condition', weather.condition);
   setText('weather-range', `H ${Math.round(weather.highCelsius)}° · L ${Math.round(weather.lowCelsius)}°`);
-  setText('weather-location', weather.locationLabel);
   setText('demo-note', data.note);
   renderEvents(data.events);
   renderTasks(data.tasks);

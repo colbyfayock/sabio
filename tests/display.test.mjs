@@ -29,22 +29,33 @@ class Element {
   get textContent() { return this.value; }
   appendChild(child) { this.children.push(child); return child; }
   setAttribute(name, value) { this.attributes[name] = value; }
+  getAttribute(name) { return this.attributes[name] ?? null; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  contains(node) { return this === node || this.children.some((child) => child.contains(node)); }
   addEventListener(name, callback) { this.listeners.set(name, callback); }
-  fire(name) { this.listeners.get(name)?.(); }
+  fire(name, event = { preventDefault() {} }) { this.listeners.get(name)?.(event); }
 }
 
 function browser() {
   const ids = new Map();
   const element = (id) => {
-    if (!ids.has(id)) ids.set(id, new Element());
+    if (!ids.has(id)) {
+      const node = new Element();
+      node.focus = () => { document.activeElement = node; };
+      ids.set(id, node);
+    }
     return ids.get(id);
   };
   const status = new Element();
+  const shell = new Element();
   const document = new Element();
   document.getElementById = element;
-  document.querySelector = () => status;
+  document.querySelector = (selector) => selector === '.connection-status' ? status : selector === '.page-shell' ? shell : null;
   document.createElement = () => new Element();
   document.documentElement = new Element();
+  element('location-dialog').hidden = true;
+  element('location-dialog').children = ['location-input', 'location-form', 'location-save', 'location-cancel', 'location-reset'].map(element);
+  shell.querySelectorAll = () => ['location-open', 'fullscreen-toggle', 'retry-button'].map(element);
   const window = new Element();
   const timers = new Map();
   let nextTimer = 0;
@@ -54,7 +65,7 @@ function browser() {
   const navigator = { onLine: true };
   const calls = [];
   const instance = {
-    element, status, document, window, navigator, timers, calls,
+    element, status, shell, document, window, navigator, timers, calls,
     respond: async () => new Response(JSON.stringify(fixture())),
     start() {
       vm.runInNewContext(source, {
@@ -217,4 +228,102 @@ test('prefixed Firefox fullscreen fallback follows actual state without a Promis
   assert.equal(page.element('fullscreen-toggle').attributes['aria-pressed'], 'true');
   page.element('fullscreen-toggle').fire('click');
   assert.equal(page.element('fullscreen-label').textContent, 'Enter fullscreen');
+});
+
+function locationStorage() {
+  const values = new Map();
+  return {
+    values,
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); },
+  };
+}
+
+test('location save is local-only, survives polling/reload, and renders untrusted text safely', async () => {
+  const storage = locationStorage();
+  const page = browser();
+  page.window.localStorage = storage;
+  page.start();
+  await page.settle();
+  const requestCount = page.calls.length;
+  page.element('location-open').fire('click');
+  assert.equal(page.document.activeElement, page.element('location-input'));
+  assert.equal(page.element('location-input').value, '');
+  page.element('location-input').value = ' <img src=x onerror=alert(1)> ';
+  page.element('location-form').fire('submit');
+  assert.equal(page.element('weather-location').textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(page.element('weather-location').children.length, 0);
+  assert.equal(page.element('location-dialog').hidden, true);
+  assert.equal(page.document.activeElement, page.element('location-open'));
+  assert.equal(page.calls.length, requestCount);
+  await page.runTimer(60000);
+  assert.equal(page.element('weather-location').textContent, '<img src=x onerror=alert(1)>');
+
+  const reload = browser();
+  reload.window.localStorage = storage;
+  reload.respond = async () => new Response('{}', { status: 503 });
+  reload.start();
+  await reload.settle();
+  assert.equal(reload.element('weather-location').textContent, '<img src=x onerror=alert(1)>');
+});
+
+test('location dialog validates, traps focus, and cancels without changing saved data', async () => {
+  const page = browser();
+  const storage = locationStorage();
+  storage.setItem('sabio.location.v1', JSON.stringify({ version: 1, label: 'Sample City' }));
+  page.window.localStorage = storage;
+  page.start();
+  await page.settle();
+  page.shell.setAttribute('aria-hidden', 'false');
+  page.element('location-open').setAttribute('tabindex', '0');
+  page.element('location-open').fire('click');
+  assert.equal(page.shell.getAttribute('aria-hidden'), 'true');
+  assert.equal(page.element('location-open').getAttribute('tabindex'), '-1');
+  page.document.fire('focusin', { target: page.element('retry-button') });
+  assert.equal(page.document.activeElement, page.element('location-input'));
+  page.element('location-input').value = ' ';
+  page.element('location-form').fire('submit');
+  assert.equal(page.element('location-dialog').hidden, false);
+  assert.equal(page.element('location-error').hidden, false);
+  page.element('location-dialog').fire('keydown', { key: 'Tab', shiftKey: true, preventDefault() {} });
+  assert.equal(page.document.activeElement, page.element('location-save'));
+  page.element('location-dialog').fire('keydown', { key: 'Tab', shiftKey: false, preventDefault() {} });
+  assert.equal(page.document.activeElement, page.element('location-input'));
+  page.element('location-input').value = 'Not saved';
+  page.element('location-dialog').fire('keydown', { key: 'Escape', preventDefault() {} });
+  assert.equal(page.element('location-dialog').hidden, true);
+  assert.equal(page.shell.getAttribute('aria-hidden'), 'false');
+  assert.equal(page.element('location-open').getAttribute('tabindex'), '0');
+  assert.equal(page.element('fullscreen-toggle').getAttribute('tabindex'), null);
+  assert.equal(JSON.parse(storage.getItem('sabio.location.v1')).label, 'Sample City');
+  page.element('location-open').fire('click');
+  page.element('location-input').value = 'Still not saved';
+  page.element('location-cancel').fire('click');
+  assert.equal(page.element('weather-location').textContent, 'Sample City');
+});
+
+test('reset removes only the location key and blocked persistence keeps a visible visit-only choice', async () => {
+  const page = browser();
+  const storage = locationStorage();
+  storage.setItem('sabio.location.v1', JSON.stringify({ version: 1, label: 'Sample City' }));
+  storage.setItem('unrelated.test.key', 'untouched');
+  page.window.localStorage = storage;
+  page.start();
+  await page.settle();
+  page.element('location-open').fire('click');
+  page.element('location-reset').fire('click');
+  assert.equal(storage.getItem('sabio.location.v1'), null);
+  assert.equal(storage.getItem('unrelated.test.key'), 'untouched');
+  assert.equal(page.element('weather-location').textContent, 'Sample weather');
+
+  const blocked = browser();
+  Object.defineProperty(blocked.window, 'localStorage', { get() { throw new Error('Blocked'); } });
+  blocked.start();
+  await blocked.settle();
+  blocked.element('location-open').fire('click');
+  blocked.element('location-input').value = 'Sample City';
+  blocked.element('location-form').fire('submit');
+  assert.equal(blocked.element('weather-location').textContent, 'Sample City');
+  assert.match(blocked.element('location-status').textContent, /visit only/);
 });

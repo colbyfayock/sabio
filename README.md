@@ -123,16 +123,35 @@ regardless of fake cookies, enrollment/admin/auth routes return 503, and other A
 static misses return 404 before asset fallback. There are no backend, provider-data,
 storage, or credential bindings. Do not treat any route as protecting personal data.
 
+### Display location
+
+Use **Set location** on the weather card to enter a city or region label. The choice
+stays in this browser's local storage and survives refreshes; **Change location**
+reopens the editor, and **Reset location** removes only Sabio's location preference.
+If browser storage is unavailable, the UI explains that the choice lasts only for
+the current visit. Cancel/Escape leave the saved choice unchanged.
+
+This is a **display label only**: the forecast remains synthetic. There is no GPS
+request, geocoding, automatic weather lookup, or location submission to the Worker
+or another service. Use a city/region rather than a precise address. Browser-local
+storage is not secret storage or protection from root access to the display.
+
 ### Validation status
 
-- 22 Node tests cover routing/denial, response policy, payload validation, text-only
+- 30 Node tests cover routing/denial, response policy, payload validation, text-only
   rendering, poll backoff/timeouts/offline recovery, in-memory tasks, and fullscreen
   state/error handling. These are unit tests, not old-browser emulation.
+- Location tests cover validation, storage errors, persistence across refresh,
+  cancel/reset/focus behavior, local-only changes, and text-only label rendering.
 - Actual local `workerd` smoke checks passed for 11 asset/API/error routes.
 - Local Chromium checks passed for 1280×800 layout, fullscreen entry/exit, checklist
   preservation after refresh, failed-refresh data retention, and a 390-pixel layout.
 - Automated desktop accessibility checks reported zero violations and no incomplete
   checks after contrast fixes. This is not a complete accessibility certification.
+- The location dialog was checked on desktop and a 320-pixel viewport, including
+  fullscreen, Enter/Escape, focus isolation/restoration, and save/reset persistence.
+  Its automated check reports no violations; an overlay contrast check remains manual
+  (the input hint's computed foreground/background ratio is approximately 4.96:1).
 - No remote deployment or new frame/Firefox-68 hardware test has been performed.
 - `pnpm build:worker` packages successfully without upload. GitHub Actions runs the
   install/check/dry-run sequence without Cloudflare credentials or deployment steps.

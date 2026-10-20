@@ -21,6 +21,14 @@ existing display, and fullscreen requires a user gesture. No new real-hardware t
 was performed; the separate frame project's older compatibility fixture is not this
 application.
 
+Display location is currently a browser-local city/region label, not a weather API
+integration. The weather-card editor saves a validated versioned preference under
+`sabio.location.v1` and overrides the sample location label across polls. It never
+submits the label, uses GPS, or geocodes. Reset removes only the owned key; blocked
+storage falls back to in-memory state with a visible warning. This is not server
+storage, an authenticated preference, or protected personal data. Provider-backed
+location search/forecast and trusted per-display settings remain future work.
+
 Local workflow: `pnpm install --frozen-lockfile`; `pnpm check` generates ignored
 environment types, typechecks Worker and frontend, builds, and runs Node unit tests.
 `pnpm dev` builds then starts Wrangler locally at `127.0.0.1:8787`. Frontend edits

@@ -3,7 +3,7 @@
 Sabio currently has an executable **LOCAL MOCK** application, not a security-ready
 service. `/api/demo` and `/health` are public; `/api/display` responds 401 without
 validating cookies, and enrollment/admin/auth routes respond 503. Static shell assets
-are public. No pairing, authentication, revocation, storage, or real data integration
+are public. No pairing, authentication, revocation, server storage, or real data integration
 is implemented. Never send personal data or credentials to this app, including after
 authenticating Wrangler locally. Account authentication is not deployment authorization.
 
@@ -24,6 +24,14 @@ The local synthetic fixture contains no real frame change or fixture-based evide
 of the new app on hardware; Firefox 68 compatibility remains unverified. The older
 fixture in the separate frame project is not the Sabio application. Local checks or
 browser tests are not evidence of deployed protection.
+
+The location editor stores only its user-entered city/region label in browser-local
+storage (`sabio.location.v1`) when available. It does not request GPS, geocode, fetch
+real weather, or send the label in API requests, URLs, cookies, or logs. It is not
+an authenticated setting and can be read by the same origin or a compromised device.
+Do not enter a precise address or treat local storage as a secrets vault. Reset
+removes only this preference, not other site data; blocked storage may limit the
+selection to the current visit. Weather values remain explicitly sample data.
 
 ## Reporting
 

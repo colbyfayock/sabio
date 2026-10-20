@@ -22,6 +22,6 @@ export function createDemoDashboard(now = new Date()): DemoDashboard {
       { id: 'windows', title: 'Let the fresh air in', completed: true },
       { id: 'tomorrow', title: 'Leave a little space for tomorrow', completed: false },
     ],
-    note: 'A calm place for your day. Everything here is sample content; nothing is connected or saved.',
+    note: 'Weather and agenda are sample content. The checklist lasts only for this visit.',
   };
 }

@@ -49,11 +49,16 @@
               <p class="weather-label">A little outside</p>
               <p class="temperature" id="temperature">Waiting for sample weather</p>
               <p class="condition" id="condition">Demo forecast</p>
+              <p class="sample-forecast-tag">Sample forecast</p>
             </div>
             <div class="weather-range" id="weather-range">—</div>
-            <p class="weather-location" id="weather-location">Sample location</p>
+            <div class="weather-location-row">
+              <p class="weather-location" id="weather-location">Sample location</p>
+              <button class="location-open" id="location-open" type="button">Set location</button>
+            </div>
           </section>
           <p class="weather-note" id="demo-note">Forecast shown for demonstration only.</p>
+          <p class="location-status" id="location-status" role="status" aria-live="polite"></p>
         </section>
 
         <div class="right-column">
@@ -96,6 +101,25 @@
         </div>
       </footer>
       <p class="fullscreen-message" id="fullscreen-message" role="status" aria-live="polite"></p>
+    </div>
+    <div class="location-overlay" id="location-dialog" role="dialog" aria-modal="true" aria-labelledby="location-dialog-title" aria-describedby="location-description" hidden>
+      <section class="location-panel">
+        <p class="eyebrow">A small detail</p>
+        <h2 id="location-dialog-title">Set your location</h2>
+        <p id="location-description" class="location-description">This sets a display label only. Live weather isn’t connected yet.</p>
+        <form id="location-form" novalidate>
+          <label class="location-field-label" for="location-input">City or region</label>
+          <input id="location-input" type="text" maxlength="160" autocomplete="off" spellcheck="false" placeholder="e.g. Sample City" aria-describedby="location-input-hint location-error">
+          <p class="location-input-hint" id="location-input-hint">Use 1–80 characters. This preference stays in this browser.</p>
+          <p class="location-error" id="location-error" role="alert" aria-live="assertive" hidden></p>
+          <div class="location-dialog-actions">
+            <button class="location-reset" id="location-reset" type="button" hidden>Reset location</button>
+            <span class="location-action-spacer"></span>
+            <button class="location-cancel" id="location-cancel" type="button">Cancel</button>
+            <button class="location-save" id="location-save" type="submit">Save</button>
+          </div>
+        </form>
+      </section>
     </div>
   </body>
 </html>
