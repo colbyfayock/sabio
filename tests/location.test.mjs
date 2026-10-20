@@ -8,7 +8,7 @@ const compiled = await build({
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString('base64')}`;
 const {
   LOCATION_STORAGE_KEY,
-  normalizeLocationLabel,
+  normalizeZipCode,
   readLocationPreference,
   resetLocationPreference,
   writeLocationPreference,
@@ -24,57 +24,75 @@ function memoryStorage(initial = {}) {
   };
 }
 
-test('location labels normalize Unicode whitespace and accept Unicode names', () => {
-  assert.equal(normalizeLocationLabel('  São   Exemplo　Centro  '), 'São Exemplo Centro');
-  assert.equal(normalizeLocationLabel('例の町'), '例の町');
-  const astralLetter = String.fromCodePoint(0x10400);
-  assert.equal(normalizeLocationLabel(astralLetter.repeat(80)), astralLetter.repeat(80));
+test('ZIP validation accepts ZIP5 and ZIP+4 while preserving leading zeroes', () => {
+  assert.equal(normalizeZipCode(' 00000 '), '00000');
+  assert.equal(normalizeZipCode('00000-0000'), '00000-0000');
+  assert.equal(normalizeZipCode('\t00000-0000 '), null);
 });
 
-test('location labels reject empty, non-string, control, invalid Unicode, and overlong values', () => {
-  assert.equal(normalizeLocationLabel('   '), null);
-  assert.equal(normalizeLocationLabel(''), null);
-  assert.equal(normalizeLocationLabel(null), null);
-  assert.equal(normalizeLocationLabel(42), null);
-  assert.equal(normalizeLocationLabel('Sample\nCity'), null);
-  assert.equal(normalizeLocationLabel('Sample\u0085City'), null);
-  assert.equal(normalizeLocationLabel('\ud800'), null);
-  assert.equal(normalizeLocationLabel('a'.repeat(81)), null);
+test('ZIP validation rejects non-strings, malformed values, controls, and non-ASCII digits', () => {
+  for (const value of [
+    '', '   ', null, 12345, '1234', '123456', '12345 6789', '12345-678', '12345-67890',
+    '１２３４５', '١٢٣٤٥', '1234５', '12\n345', '\n12345', '12345\t', '12345-6789x',
+  ]) {
+    assert.equal(normalizeZipCode(value), null, `Expected ${JSON.stringify(value)} to be rejected`);
+  }
 });
 
-test('reads only a valid bounded version 1 location record', () => {
+test('reads only a valid bounded version 2 ZIP preference record', () => {
   const storage = memoryStorage({
-    [LOCATION_STORAGE_KEY]: JSON.stringify({ version: 1, label: 'Sample City' }),
+    [LOCATION_STORAGE_KEY]: JSON.stringify({ version: 2, zipCode: '00000-0000' }),
   });
-  assert.deepEqual(readLocationPreference(storage), { label: 'Sample City', available: true });
+  assert.deepEqual(readLocationPreference(storage), {
+    zipCode: '00000-0000', available: true, hasStoredPreference: true,
+  });
 
   for (const value of [
     '{not json',
-    JSON.stringify({ version: 2, label: 'Sample City' }),
-    JSON.stringify({ version: 1, label: 'Sample City', extra: true }),
-    JSON.stringify({ version: 1, label: '' }),
+    JSON.stringify({ version: 1, label: 'Sample City' }),
+    JSON.stringify({ version: 2, label: '00000' }),
+    JSON.stringify({ version: 2, zipCode: '0000' }),
+    JSON.stringify({ version: 2, zipCode: '00000', extra: true }),
     'x'.repeat(513),
   ]) {
     storage.setItem(LOCATION_STORAGE_KEY, value);
-    assert.deepEqual(readLocationPreference(storage), { label: null, available: true });
+    assert.deepEqual(readLocationPreference(storage), {
+      zipCode: null, available: true, hasStoredPreference: true,
+    });
   }
-  assert.deepEqual(readLocationPreference(memoryStorage()), { label: null, available: true });
+  assert.deepEqual(readLocationPreference(memoryStorage()), {
+    zipCode: null, available: true, hasStoredPreference: false,
+  });
 });
 
-test('writes normalized versioned records and catches storage getter and method failures', () => {
-  const storage = memoryStorage();
-  assert.equal(writeLocationPreference(storage, ' Sample   City '), true);
-  assert.deepEqual(JSON.parse(storage.getItem(LOCATION_STORAGE_KEY)), {
-    version: 1,
-    label: 'Sample City',
+test('legacy city preference is neither converted nor modified by reading', () => {
+  const legacy = JSON.stringify({ version: 1, label: 'Sample City' });
+  const storage = memoryStorage({ [LOCATION_STORAGE_KEY]: legacy });
+  assert.deepEqual(readLocationPreference(storage), {
+    zipCode: null, available: true, hasStoredPreference: true,
   });
-  assert.equal(writeLocationPreference(storage, ''), false);
+  assert.equal(storage.getItem(LOCATION_STORAGE_KEY), legacy);
+});
+
+test('writes normalized version 2 ZIP records and catches storage failures', () => {
+  const storage = memoryStorage();
+  assert.equal(writeLocationPreference(storage, ' 00000-0000 '), true);
+  assert.deepEqual(JSON.parse(storage.getItem(LOCATION_STORAGE_KEY)), {
+    version: 2,
+    zipCode: '00000-0000',
+  });
+  assert.equal(writeLocationPreference(storage, 12345), false);
+  assert.equal(writeLocationPreference(storage, 'Sample City'), false);
 
   const readFailure = { ...storage, getItem() { throw new Error('blocked'); } };
-  assert.deepEqual(readLocationPreference(readFailure), { label: null, available: false });
-  assert.deepEqual(readLocationPreference(() => { throw new Error('blocked'); }), { label: null, available: false });
-  assert.equal(writeLocationPreference({ ...storage, setItem() { throw new Error('blocked'); } }, 'Sample City'), false);
-  assert.equal(writeLocationPreference(() => { throw new Error('blocked'); }, 'Sample City'), false);
+  assert.deepEqual(readLocationPreference(readFailure), {
+    zipCode: null, available: false, hasStoredPreference: false,
+  });
+  assert.deepEqual(readLocationPreference(() => { throw new Error('blocked'); }), {
+    zipCode: null, available: false, hasStoredPreference: false,
+  });
+  assert.equal(writeLocationPreference({ ...storage, setItem() { throw new Error('blocked'); } }, '00000'), false);
+  assert.equal(writeLocationPreference(() => { throw new Error('blocked'); }, '00000'), false);
 });
 
 test('reset removes only the owned preference and catches remove failures', () => {

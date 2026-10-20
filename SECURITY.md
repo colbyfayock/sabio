@@ -25,11 +25,13 @@ of the new app on hardware; Firefox 68 compatibility remains unverified. The old
 fixture in the separate frame project is not the Sabio application. Local checks or
 browser tests are not evidence of deployed protection.
 
-The location editor stores only its user-entered city/region label in browser-local
-storage (`sabio.location.v1`) when available. It does not request GPS, geocode, fetch
-real weather, or send the label in API requests, URLs, cookies, or logs. It is not
+The location editor stores only its user-entered US ZIP code in browser-local
+storage (`sabio.location.v1`, version-2 ZIP record) when available. It does not request
+GPS, geocode, fetch real weather, or send the ZIP in API requests, URLs, cookies, or
+logs. It is not
 an authenticated setting and can be read by the same origin or a compromised device.
-Do not enter a precise address or treat local storage as a secrets vault. Reset
+Do not treat local storage as a secrets vault. Old city records are ignored, not
+converted or submitted; they are replaced/removed only by explicit Save/Reset. Reset
 removes only this preference, not other site data; blocked storage may limit the
 selection to the current visit. Weather values remain explicitly sample data.
 

@@ -21,10 +21,13 @@ existing display, and fullscreen requires a user gesture. No new real-hardware t
 was performed; the separate frame project's older compatibility fixture is not this
 application.
 
-Display location is currently a browser-local city/region label, not a weather API
-integration. The weather-card editor saves a validated versioned preference under
-`sabio.location.v1` and overrides the sample location label across polls. It never
-submits the label, uses GPS, or geocodes. Reset removes only the owned key; blocked
+Display location is currently a browser-local US ZIP code, not a weather API
+integration. The weather-card editor saves a version-2 `{ version, zipCode }` preference
+under the existing `sabio.location.v1` namespace and overrides the sample location label
+across polls. ZIP5/ZIP+4 syntax is validated as text to preserve leading zeros, not
+verified against a real postal database. Old city records are ignored, not guessed
+into ZIPs, and are replaced/removed only on explicit Save/Reset. It never submits the
+ZIP, uses GPS, or geocodes. Reset removes only the owned key; blocked
 storage falls back to in-memory state with a visible warning. This is not server
 storage, an authenticated preference, or protected personal data. Provider-backed
 location search/forecast and trusted per-display settings remain future work.

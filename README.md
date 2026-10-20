@@ -123,26 +123,28 @@ regardless of fake cookies, enrollment/admin/auth routes return 503, and other A
 static misses return 404 before asset fallback. There are no backend, provider-data,
 storage, or credential bindings. Do not treat any route as protecting personal data.
 
-### Display location
+### Weather ZIP code
 
-Use **Set location** on the weather card to enter a city or region label. The choice
-stays in this browser's local storage and survives refreshes; **Change location**
-reopens the editor, and **Reset location** removes only Sabio's location preference.
+Use **Set ZIP code** on the weather card to enter a US ZIP code: five digits or
+ZIP+4. Leading zeros are preserved. The choice stays in this browser's local storage
+and survives refreshes; **Change ZIP code** reopens the editor, and **Reset ZIP code**
+removes only Sabio's location preference.
 If browser storage is unavailable, the UI explains that the choice lasts only for
 the current visit. Cancel/Escape leave the saved choice unchanged.
 
 This is a **display label only**: the forecast remains synthetic. There is no GPS
-request, geocoding, automatic weather lookup, or location submission to the Worker
-or another service. Use a city/region rather than a precise address. Browser-local
-storage is not secret storage or protection from root access to the display.
+request, geocoding, automatic weather lookup, or ZIP submission to the Worker or
+another service. Browser-local storage is not secret storage or protection from root
+access to the display. Old city-label records are not interpreted as ZIP codes;
+explicitly saving replaces the owned record with the ZIP schema, and Reset removes it.
 
 ### Validation status
 
-- 30 Node tests cover routing/denial, response policy, payload validation, text-only
+- 33 Node tests cover routing/denial, response policy, payload validation, text-only
   rendering, poll backoff/timeouts/offline recovery, in-memory tasks, and fullscreen
   state/error handling. These are unit tests, not old-browser emulation.
-- Location tests cover validation, storage errors, persistence across refresh,
-  cancel/reset/focus behavior, local-only changes, and text-only label rendering.
+- ZIP tests cover ZIP5/ZIP+4 syntax, leading zeros, old city-record handling, storage
+  errors, persistence across refresh, cancel/reset/focus, and local-only changes.
 - Actual local `workerd` smoke checks passed for 11 asset/API/error routes.
 - Local Chromium checks passed for 1280×800 layout, fullscreen entry/exit, checklist
   preservation after refresh, failed-refresh data retention, and a 390-pixel layout.

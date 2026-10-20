@@ -240,8 +240,9 @@ function locationStorage() {
   };
 }
 
-test('location save is local-only, survives polling/reload, and renders untrusted text safely', async () => {
+test('ZIP save is local-only, survives polling/reload, and rejects markup as a ZIP', async () => {
   const storage = locationStorage();
+  storage.setItem('sabio.location.v1', JSON.stringify({ version: 2, zipCode: '00000' }));
   const page = browser();
   page.window.localStorage = storage;
   page.start();
@@ -249,29 +250,36 @@ test('location save is local-only, survives polling/reload, and renders untruste
   const requestCount = page.calls.length;
   page.element('location-open').fire('click');
   assert.equal(page.document.activeElement, page.element('location-input'));
-  assert.equal(page.element('location-input').value, '');
+  assert.equal(page.element('location-input').value, '00000');
   page.element('location-input').value = ' <img src=x onerror=alert(1)> ';
   page.element('location-form').fire('submit');
-  assert.equal(page.element('weather-location').textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(page.element('location-dialog').hidden, false);
+  assert.equal(page.element('location-error').hidden, false);
+  assert.equal(page.element('weather-location').textContent, 'ZIP 00000');
+  assert.equal(JSON.parse(storage.getItem('sabio.location.v1')).zipCode, '00000');
+  assert.equal(page.element('weather-location').children.length, 0);
+  page.element('location-input').value = ' 00000-0000 ';
+  page.element('location-form').fire('submit');
+  assert.equal(page.element('weather-location').textContent, 'ZIP 00000-0000');
   assert.equal(page.element('weather-location').children.length, 0);
   assert.equal(page.element('location-dialog').hidden, true);
   assert.equal(page.document.activeElement, page.element('location-open'));
   assert.equal(page.calls.length, requestCount);
   await page.runTimer(60000);
-  assert.equal(page.element('weather-location').textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(page.element('weather-location').textContent, 'ZIP 00000-0000');
 
   const reload = browser();
   reload.window.localStorage = storage;
   reload.respond = async () => new Response('{}', { status: 503 });
   reload.start();
   await reload.settle();
-  assert.equal(reload.element('weather-location').textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(reload.element('weather-location').textContent, 'ZIP 00000-0000');
 });
 
 test('location dialog validates, traps focus, and cancels without changing saved data', async () => {
   const page = browser();
   const storage = locationStorage();
-  storage.setItem('sabio.location.v1', JSON.stringify({ version: 1, label: 'Sample City' }));
+  storage.setItem('sabio.location.v1', JSON.stringify({ version: 2, zipCode: '00000' }));
   page.window.localStorage = storage;
   page.start();
   await page.settle();
@@ -296,17 +304,55 @@ test('location dialog validates, traps focus, and cancels without changing saved
   assert.equal(page.shell.getAttribute('aria-hidden'), 'false');
   assert.equal(page.element('location-open').getAttribute('tabindex'), '0');
   assert.equal(page.element('fullscreen-toggle').getAttribute('tabindex'), null);
-  assert.equal(JSON.parse(storage.getItem('sabio.location.v1')).label, 'Sample City');
+  assert.equal(JSON.parse(storage.getItem('sabio.location.v1')).zipCode, '00000');
   page.element('location-open').fire('click');
   page.element('location-input').value = 'Still not saved';
   page.element('location-cancel').fire('click');
-  assert.equal(page.element('weather-location').textContent, 'Sample City');
+  assert.equal(page.element('weather-location').textContent, 'ZIP 00000');
+});
+
+test('legacy preference is not used and can be explicitly reset', async () => {
+  const page = browser();
+  const storage = locationStorage();
+  const legacy = JSON.stringify({ version: 1, label: 'Sample City' });
+  storage.setItem('sabio.location.v1', legacy);
+  page.window.localStorage = storage;
+  page.start();
+  await page.settle();
+  assert.equal(page.element('weather-location').textContent, 'Sample weather');
+  assert.match(page.element('location-status').textContent, /preferences that are not ZIP codes are not used/);
+  assert.equal(storage.getItem('sabio.location.v1'), legacy);
+  page.element('location-open').fire('click');
+  assert.equal(page.element('location-reset').hidden, false);
+  page.element('location-cancel').fire('click');
+  assert.equal(storage.getItem('sabio.location.v1'), legacy);
+  page.element('location-open').fire('click');
+  page.element('location-reset').fire('click');
+  assert.equal(storage.getItem('sabio.location.v1'), null);
+  assert.equal(page.element('weather-location').textContent, 'Sample weather');
+});
+
+test('a failed reset keeps the reset control available for a newly saved ZIP', async () => {
+  const page = browser();
+  const storage = locationStorage();
+  storage.removeItem = () => { throw new Error('Storage unavailable'); };
+  page.window.localStorage = storage;
+  page.start();
+  await page.settle();
+  page.element('location-open').fire('click');
+  page.element('location-input').value = '00000';
+  page.element('location-form').fire('submit');
+  page.element('location-open').fire('click');
+  page.element('location-reset').fire('click');
+  assert.equal(page.element('location-reset').hidden, false);
+  assert.equal(JSON.parse(storage.getItem('sabio.location.v1')).zipCode, '00000');
+  assert.match(page.element('location-status').textContent, /could not be cleared/);
 });
 
 test('reset removes only the location key and blocked persistence keeps a visible visit-only choice', async () => {
   const page = browser();
   const storage = locationStorage();
-  storage.setItem('sabio.location.v1', JSON.stringify({ version: 1, label: 'Sample City' }));
+  storage.setItem('sabio.location.v1', JSON.stringify({ version: 2, zipCode: '00000' }));
   storage.setItem('unrelated.test.key', 'untouched');
   page.window.localStorage = storage;
   page.start();
@@ -322,8 +368,8 @@ test('reset removes only the location key and blocked persistence keeps a visibl
   blocked.start();
   await blocked.settle();
   blocked.element('location-open').fire('click');
-  blocked.element('location-input').value = 'Sample City';
+  blocked.element('location-input').value = '00000';
   blocked.element('location-form').fire('submit');
-  assert.equal(blocked.element('weather-location').textContent, 'Sample City');
+  assert.equal(blocked.element('weather-location').textContent, 'ZIP 00000');
   assert.match(blocked.element('location-status').textContent, /visit only/);
 });

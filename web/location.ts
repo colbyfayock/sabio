@@ -1,6 +1,6 @@
 export const LOCATION_STORAGE_KEY = 'sabio.location.v1';
 
-const LOCATION_RECORD_VERSION = 1;
+const LOCATION_RECORD_VERSION = 2;
 const MAX_STORAGE_JSON_LENGTH = 512;
 
 export interface LocationStorage {
@@ -12,8 +12,9 @@ export interface LocationStorage {
 export type LocationStorageSource = LocationStorage | (() => LocationStorage);
 
 export interface StoredLocationResult {
-  label: string | null;
+  zipCode: string | null;
   available: boolean;
+  hasStoredPreference: boolean;
 }
 
 function getStorage(source: LocationStorageSource): LocationStorage {
@@ -25,7 +26,7 @@ function getStorage(source: LocationStorageSource): LocationStorage {
   return storage;
 }
 
-export function normalizeLocationLabel(value: unknown): string | null {
+export function normalizeZipCode(value: unknown): string | null {
   if (typeof value !== 'string') return null;
 
   for (const character of value) {
@@ -35,9 +36,8 @@ export function normalizeLocationLabel(value: unknown): string | null {
         (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
   }
 
-  const label = value.trim().replace(/\s+/g, ' ');
-  const length = Array.from(label).length;
-  return length >= 1 && length <= 80 ? label : null;
+  const zipCode = value.trim();
+  return /^[0-9]{5}(?:-[0-9]{4})?$/.test(zipCode) ? zipCode : null;
 }
 
 export function readLocationPreference(source: LocationStorageSource): StoredLocationResult {
@@ -45,36 +45,36 @@ export function readLocationPreference(source: LocationStorageSource): StoredLoc
   try {
     stored = getStorage(source).getItem(LOCATION_STORAGE_KEY);
   } catch {
-    return { label: null, available: false };
+    return { zipCode: null, available: false, hasStoredPreference: false };
   }
-  if (stored === null) return { label: null, available: true };
+  if (stored === null) return { zipCode: null, available: true, hasStoredPreference: false };
   if (typeof stored !== 'string' || stored.length > MAX_STORAGE_JSON_LENGTH) {
-    return { label: null, available: true };
+    return { zipCode: null, available: true, hasStoredPreference: true };
   }
 
   try {
     const value: unknown = JSON.parse(stored);
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return { label: null, available: true };
+      return { zipCode: null, available: true, hasStoredPreference: true };
     }
     const record = value as Record<string, unknown>;
     if (Object.keys(record).length !== 2 || record.version !== LOCATION_RECORD_VERSION) {
-      return { label: null, available: true };
+      return { zipCode: null, available: true, hasStoredPreference: true };
     }
-    const label = normalizeLocationLabel(record.label);
-    return { label, available: true };
+    const zipCode = normalizeZipCode(record.zipCode);
+    return { zipCode, available: true, hasStoredPreference: true };
   } catch {
-    return { label: null, available: true };
+    return { zipCode: null, available: true, hasStoredPreference: true };
   }
 }
 
 export function writeLocationPreference(source: LocationStorageSource, value: unknown): boolean {
-  const label = normalizeLocationLabel(value);
-  if (label === null) return false;
+  const zipCode = normalizeZipCode(value);
+  if (zipCode === null) return false;
   try {
     getStorage(source).setItem(LOCATION_STORAGE_KEY, JSON.stringify({
       version: LOCATION_RECORD_VERSION,
-      label,
+      zipCode,
     }));
     return true;
   } catch {
@@ -110,7 +110,8 @@ function focusIfAvailable(element: HTMLElement | null): void {
 export function initializeLocationControls(defaultLabel = 'Sample location'): LocationControls {
   const storageSource = () => window.localStorage;
   const preference = readLocationPreference(storageSource);
-  let selectedLabel = preference.label;
+  let selectedZipCode = preference.zipCode;
+  let hasStoredPreference = preference.hasStoredPreference;
   let fallbackLabel = defaultLabel;
 
   const labelNode = document.getElementById('weather-location');
@@ -127,11 +128,11 @@ export function initializeLocationControls(defaultLabel = 'Sample location'): Lo
   let previousPageHidden: string | null = null;
   const backgroundTabStops = new Map<HTMLElement, string | null>();
 
-  const currentLabel = (): string => selectedLabel || fallbackLabel;
+  const currentLabel = (): string => selectedZipCode === null ? fallbackLabel : `ZIP ${selectedZipCode}`;
   const renderLabel = (): void => {
     if (labelNode) labelNode.textContent = currentLabel();
-    if (trigger) trigger.textContent = selectedLabel === null ? 'Set location' : 'Change location';
-    if (resetButton) resetButton.hidden = selectedLabel === null;
+    if (trigger) trigger.textContent = selectedZipCode === null ? 'Set ZIP code' : 'Change ZIP code';
+    if (resetButton) resetButton.hidden = selectedZipCode === null && !hasStoredPreference;
   };
   const announce = (message: string): void => {
     if (statusNode) statusNode.textContent = message;
@@ -159,13 +160,15 @@ export function initializeLocationControls(defaultLabel = 'Sample location'): Lo
 
   renderLabel();
   if (!preference.available) {
-    announce('Location preference storage is unavailable; changes will last for this visit only.');
+    announce('ZIP preference storage is unavailable; changes will last for this visit only.');
+  } else if (preference.hasStoredPreference && preference.zipCode === null) {
+    announce('Set a ZIP code for this browser; saved preferences that are not ZIP codes are not used.');
   }
 
   if (trigger && dialog && input && form && cancelButton && saveButton) {
     trigger.addEventListener('click', () => {
       if (!dialog.hidden) return;
-      input.value = selectedLabel || '';
+      input.value = selectedZipCode || '';
       clearError();
       if (dialog) dialog.hidden = false;
       focusIfAvailable(input);
@@ -182,23 +185,24 @@ export function initializeLocationControls(defaultLabel = 'Sample location'): Lo
     });
 
     const save = (): void => {
-      const label = normalizeLocationLabel(input.value);
-      if (label === null) {
+      const zipCode = normalizeZipCode(input.value);
+      if (zipCode === null) {
         if (errorNode) {
-          errorNode.textContent = 'Enter a city or region using 1–80 characters. Control characters aren’t allowed.';
+          errorNode.textContent = 'Enter a US ZIP code as 5 digits or ZIP+4 (00000-0000).';
           errorNode.hidden = false;
         }
         focusIfAvailable(input);
         return;
       }
 
-      selectedLabel = label;
-      const persisted = writeLocationPreference(storageSource, label);
+      selectedZipCode = zipCode;
+      const persisted = writeLocationPreference(storageSource, zipCode);
+      if (persisted) hasStoredPreference = true;
       renderLabel();
       closeDialog();
       announce(persisted
-        ? 'Location saved in this browser.'
-        : 'Location set for this visit only; browser storage is unavailable.');
+        ? 'ZIP code saved in this browser.'
+        : 'ZIP code set for this visit only; browser storage is unavailable.');
     };
 
     form.addEventListener('submit', (event) => {
@@ -208,13 +212,14 @@ export function initializeLocationControls(defaultLabel = 'Sample location'): Lo
     cancelButton.addEventListener('click', closeDialog);
     if (resetButton) {
       resetButton.addEventListener('click', () => {
-        selectedLabel = null;
+        selectedZipCode = null;
         const removed = resetLocationPreference(storageSource);
+        if (removed) hasStoredPreference = false;
         renderLabel();
         closeDialog();
         announce(removed
-          ? 'Location reset to the sample default.'
-          : 'Location reset for this visit; browser storage could not be cleared.');
+          ? 'ZIP code reset to the sample default.'
+          : 'ZIP code reset for this visit; browser storage could not be cleared.');
       });
     }
 
