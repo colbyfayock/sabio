@@ -2,19 +2,21 @@
 
 Status: **LOCAL PREVIEW** implemented with the selected left-sidebar Horizon UI,
 live public Fahrenheit weather/timezone and browser-local slideshow configuration.
-Managed owner verification, enrollment, sessions and revocation are implemented and
-locally tested. The checked-in default stays unconfigured. A separate owner-approved
-managed deployment now has real Access/D1 resources and passed denial/redirect/pending
-checks, but signed-in owner flows and hardware still need validation. Private
-integrations remain future work; this is not standing authorization for more cloud changes.
+Managed owner verification, owner-issued pairing, sessions and revocation are
+implemented and locally tested. The checked-in default stays unconfigured. A separate
+owner-approved managed deployment has real Access/D1 resources and passed earlier
+denial/redirect/pending checks, but it still serves the display-initiated approval flow.
+Owner-initiated pairing is not deployed; signed-in owner flows and hardware still need
+validation. Private integrations remain future work; this is not standing authorization
+for more cloud changes.
 
 ## Current local implementation
 
 Wrangler runs the Worker before asset handling (`run_worker_first`); there is no SPA
 fallback. The Worker exposes public `/health` and `POST /api/weather`, which is
 unauthenticated only in the loopback preview. `/api/demo` has been removed. In default preview, bootstrap and
-weather are loopback-only; `/api/display` denies access and enrollment/admin remain
-unavailable. In configured managed mode, D1-backed enrollment/session/revocation and
+weather are loopback-only; `/api/display` denies access and pairing/admin remain
+unavailable. In configured managed mode, D1-backed pairing/session/revocation and
 signed owner JWT verification protect the APIs. Unknown API/static paths return 404
 before the asset binding. Public assets are the display shell, CSS, app/admin JS and
 favicon; `/admin` serves its shell only after owner verification, and direct
@@ -41,7 +43,7 @@ The browser sends only the first five digits using JSON body `{ zipCode: ZIP5 }`
 `POST /api/weather`; location values in the query string are rejected. The endpoint
 requires POST, JSON content type, exactly one string property, and same-origin requests
 when an Origin header is present. It has bounded request bodies. Managed mode also
-requires the exact Origin, an approved display cookie and a D1 rate budget; preview
+requires the exact Origin, a paired display cookie and a D1 rate budget; preview
 omits credentials. There is no calendar access or private weather-provider account.
 
 The Worker geocodes with Open-Meteo, accepts only an exact returned postcode and US
@@ -109,7 +111,7 @@ authorize deployment. Never send private data to this public mock, even after CL
 ## Goals and boundaries
 
 Host an owner-controlled dashboard on Cloudflare without requiring an always-on home
-server. Support individually approved display browsers and selected real data sources.
+server. Support owner-issued pairings for display browsers and selected real data sources.
 Start with public/mock data; add private integrations only after authorization tests.
 
 Frame provisioning, raw storage, root access and recovery belong in
@@ -148,9 +150,9 @@ to deploy onto or operate a frame.
 
 ### Storage
 
-- The local D1 schema implements display registrations, bounded enrollment state,
+- The local D1 schema implements display registrations, bounded pairing state,
   hashed high-entropy session credentials, revocation and non-secret configuration.
-- The tested schema uses atomic batches for one-time approval and consumption,
+- The tested schema uses atomic batches for one-time claim consumption,
   and bounded expiry cleanup that is admitted-only plus a scheduled 15-minute trigger.
   Validate production consistency, cron deployment and retention before
   enabling it. Browser-local photo/location/appearance settings do not yet sync to D1.
@@ -160,29 +162,33 @@ to deploy onto or operate a frame.
   cross-user shared-cache leaks. Do not log cookies, codes, auth headers, tokens,
   calendar contents or raw upstream responses.
 
-## Enrollment flow (implemented locally, not configured in Cloudflare)
+## Owner-initiated pairing flow (implemented locally, not deployed)
 
-1. A new browser obtains a short-lived pending enrollment and displays a pairing code.
-   It must also hold a separate unguessable enrollment credential; the display code
-   alone must not let a different browser claim an approved session.
-2. The owner authenticates on a trusted modern device and approves that exact request.
-    Cloudflare Access JWT verification is implemented server-side with the configured
-    issuer, audience and owner identity. Actual Access policies/login remain unverified.
-3. The original pending browser completes enrollment exactly once. Use high-entropy
-   random credentials, hashed storage, explicit expiry, attempt limits, request
-   throttling and atomic state changes; do not exchange secrets in URL query strings.
+1. The owner authenticates on a trusted modern device and explicitly requests a
+   short-lived pairing code at `/admin`. Cloudflare Access JWT verification is
+   implemented server-side with the configured issuer, audience and owner identity.
+   Actual Access policies/login remain unverified.
+2. The owner enters that code on the unapproved display. The display claims it with a
+   same-origin JSON request, and only the code hash is stored. There is no public
+   display-initiated request or owner approval step. A newer code invalidates older
+   unclaimed codes. Treat the code as a bearer secret until it expires.
+3. The claim consumes the pairing record exactly once. Use hashed storage, explicit
+   expiry, attempt limits, request throttling and atomic state changes; do not exchange
+   secrets in URL query strings. Concurrent or replayed claims must not issue a second
+   session.
 4. Issue a scoped Secure/HttpOnly session cookie with appropriate SameSite behavior
-   and CSRF protection for enrollment/admin state changes. Check validity, expiry,
+   and CSRF protection for pairing/admin state changes. Check validity, expiry,
    revocation and assigned display scope on every private-data request.
 5. The owner can list/revoke individual display sessions. Use a seven-day idle window
-    that renews at most once per day while the display checks in; seven days offline
-    requires pairing again, and there is no absolute lifetime cap. See
-    [access control](access-control.md) for code and release gaps.
+   that renews at most once per day while the display checks in; seven days offline
+   requires pairing again, and there is no absolute lifetime cap. See
+   [access control](access-control.md) for code and release gaps.
 
-This approves **a browser credential**, not a physical device. A copied credential
-can impersonate its browser, especially on a root-accessible frame. MAC addresses,
-serial-number strings, user agents and home public-IP allowlists do not prove identity.
-Do not assume modern WARP/device posture or login flows work on Android 4.4/Firefox 68.
+This pairs **a browser credential**, not a physical device. A copied credential or a
+copied pairing code can impersonate its browser, especially on a root-accessible frame.
+MAC addresses, serial-number strings, user agents and home public-IP allowlists do not
+prove identity. Do not assume modern WARP/device posture or login flows work on
+Android 4.4/Firefox 68.
 
 ## Integration status and future sequence
 
@@ -207,9 +213,9 @@ Handle quota exhaustion safely. No paid services or billing changes without appr
 
 1. **Executable foundation:** pinned tooling, Worker/local preview and legacy display
    shell with mock JSON; automated route/type/build tests. No private data endpoint.
-2. **Enrollment/auth:** test deny-by-default, brute-force bounds, expiry, single-use
-   races, admin forgery, CSRF, stolen/mismatched enrollment credentials, per-display
-   access, rotation, revocation and private-cache behavior before deployment.
+2. **Pairing/auth:** test deny-by-default, brute-force bounds, expiry, single-use
+   races, admin forgery, CSRF, stolen/mismatched pairing codes or session credentials,
+   per-display access, rotation, revocation and private-cache behavior before deployment.
 3. **Owner-approved mock-only deployment:** verify HTTPS, cookie persistence, pairing
    and fullscreen on the real Firefox 68 device; deny a separate unapproved browser.
    Test default/custom/preview hosts so no alternate route exposes private data.

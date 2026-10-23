@@ -63,7 +63,11 @@ select { min-width: 112px; min-height: 44px; padding: 0 12px; border: 1px solid 
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
 .dialog-actions button { margin-left: 12px; }
 .dialog .pairing-code { color: var(--ink); font-size: 30px; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
-#access-start { margin-bottom: 12px; }
+.dialog .pairing-code:empty { display: none; }
+#access-pair-form { margin-bottom: 14px; }
+#access-pair-form button { margin-top: 10px; }
+#access-pair-code { text-transform: uppercase; letter-spacing: .12em; font-size: 20px; }
+#access-retry { margin-bottom: 12px; }
 #access-dialog { background: var(--paper); }
 #access-dialog .dialog { box-shadow: none; }
 .admin-page { max-width: 780px; margin: 0 auto; padding: 40px 24px; }

@@ -56,10 +56,15 @@
     <div class="dialog-shade" id="access-dialog" role="dialog" aria-modal="true" aria-labelledby="access-title">
       <section class="dialog">
         <h2 id="access-title">A place for this display.</h2>
-        <p id="access-status" role="status">Checking browser approval…</p>
-        <p class="pairing-code" id="access-code" role="status" aria-label="Pairing code"></p>
-        <button class="text-button" id="access-start" type="button" hidden>Request approval code</button>
-        <p>Approve from <strong>/admin</strong> on your trusted browser. This approves a browser session, not the physical hardware.</p>
+        <p id="access-status" role="status">Checking browser access…</p>
+        <form id="access-pair-form" hidden>
+          <label for="access-pair-code">Pairing code</label>
+          <input id="access-pair-code" type="text" inputmode="text" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="10-character code" aria-describedby="access-pair-help">
+          <p class="small-note" id="access-pair-help">Generate a one-time code at <strong>/admin</strong> on your trusted browser, then enter it here. It expires after ten minutes.</p>
+          <button class="text-button" id="access-pair-submit" type="submit">Pair display</button>
+        </form>
+        <button class="text-button" id="access-retry" type="button" hidden>Retry connection</button>
+        <p>This pairs a browser session, not the physical hardware.</p>
       </section>
     </div>
     <div class="dialog-shade" id="location-dialog" role="dialog" aria-modal="true" aria-labelledby="location-dialog-title" aria-describedby="location-description" hidden>

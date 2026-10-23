@@ -26,12 +26,10 @@ test('actual local D1 batches allow one pairing claim and enforce revocation', {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const call = (path, body, cookie) => handleAccessRequest(request(path, body, cookie), db, async () => true, origin);
-    const enrollment = await call('/api/enrollment', {});
-    assert.equal(enrollment.status, 201);
-    const { code } = await enrollment.json();
-    const pending = enrollment.headers.getSetCookie()[0].split(';')[0];
-    assert.equal((await call('/api/admin/approve', { code })).status, 200);
-    const claims = await Promise.all([call('/api/enrollment/complete', {}, pending), call('/api/enrollment/complete', {}, pending)]);
+    const pairing = await call('/api/admin/pairing', {});
+    assert.equal(pairing.status, 201);
+    const { code } = await pairing.json();
+    const claims = await Promise.all([call('/api/enrollment/claim', { code }), call('/api/enrollment/claim', { code })]);
     assert.deepEqual(claims.map((response) => response.status).sort(), [200, 401]);
     const completed = claims.find((response) => response.status === 200);
     const session = completed.headers.getSetCookie().find((cookie) => cookie.startsWith('__Host-sabio_display=')).split(';')[0];

@@ -2,9 +2,11 @@
 
 The checked-in default remains a **local preview**. An owner-managed initial
 deployment exists, but authenticated owner workflows and frame validation are pending.
-This runbook records release gates, not permission to deploy or create resources.
-The intended first release is a single-owner Horizon dashboard with public photos,
-ZIP-driven Fahrenheit weather/time, and individually approved display browsers.
+The deployed Worker still serves the earlier display-initiated approval flow; the
+source now implements owner-initiated pairing, locally tested but not deployed. This
+runbook records release gates, not permission to deploy or create resources. The
+intended first release is a single-owner Horizon dashboard with public photos,
+ZIP-driven Fahrenheit weather/time, and owner-issued pairings for display browsers.
 There is no calendar, task integration, private upload, or cloud-album sync.
 
 ## Initial deployment status
@@ -16,11 +18,12 @@ resource/version IDs and setup credentials remain ignored under `private/`; the 
 is never a Worker binding or frontend variable. The public local config is unchanged.
 No paid upgrade or unrelated Access/network rule was applied.
 
-Remote checks passed: HTTPS shell/security headers, managed bootstrap, unapproved
-weather/display denial, forged cookie rejection, owner-path login redirects, CSRF
-denial, pending enrollment and private-path 404s. The browser gate was verified before
-photo/weather loading. An owner-run 2026-10-22 pass then approved a second browser,
-loaded the dashboard, resolved weather and confirmed revocation on two browsers.
+Remote checks of the earlier flow passed: HTTPS shell/security headers, managed
+bootstrap, unapproved weather/display denial, forged cookie rejection, owner-path login
+redirects, CSRF denial, pending enrollment and private-path 404s. The browser gate was
+verified before photo/weather loading. An owner-run 2026-10-22 pass then approved a
+second browser, loaded the dashboard, resolved weather and confirmed revocation on two
+browsers. The owner-initiated flow has not been deployed or remotely verified.
 Hardware remains a gate.
 The first release has no earlier good deployed version to roll back to; do not assume
 an untested code rollback or database recovery procedure has been proven.
@@ -35,6 +38,11 @@ Additive `0004_access_cleanup_indexes.sql` is applied and the Worker now runs th
 bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowlisted
 (the custom hostname and the `workers.dev` address); both serve the security headers
 and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
+
+Owner-initiated pairing reuses the existing enrollment table and requires no new
+migration. Existing display sessions remain valid. Legacy display-initiated pending
+rows are deliberately not claimable by the new route and expire through normal cleanup;
+those browsers must be paired again.
 
 Rolling display sessions are deployed as of 2026-10-22; the Worker version is recorded
 privately. Active displays renew the seven-day idle window at most once per day and
@@ -75,22 +83,25 @@ Before making the API publicly reachable:
 - Authenticate the owner on a trusted modern browser. A plain forwarded email header
   is not identity verification. If using Cloudflare Access, validate its signed JWT
   issuer, audience, signature and lifetime, and restrict the actual owner identity.
-- Store display registrations, session hashes, revocation, bounded enrollment state
+- Store display registrations, session hashes, revocation, bounded pairing state
   and per-display settings in the agreed storage. Decide schema, deletion/retention
   and atomic one-time pairing consumption before running migrations.
-- Pair only the original pending browser using its separate high-entropy credential;
-  expire codes, bound attempts and prevent replay/concurrent double consumption.
+- Generate a pairing code only after explicit owner action, only while pairing the
+  intended display, and treat it as a bearer secret. Expire codes quickly, keep only
+  the newest owner-issued code valid, bound claim attempts and prevent
+  replay/concurrent double consumption. Do not restore a public display-initiated
+  enrollment/approval path.
 - Use scoped Secure/HttpOnly cookies, a documented idle-timeout renewal, and CSRF
   protection. A frame session must not authorize administration or another display.
 - Check authorization on every private route, alternate host and encoded-path variant.
   Ensure static fallback and shared caches cannot expose configuration or private data.
 - Protect weather usage with agreed authorization and rate/abuse limits, including
-  enrollment traffic. Origin checks alone are not authentication or rate limiting.
+  pairing traffic. Origin checks alone are not authentication or rate limiting.
 - Prove denial, forgery resistance, expiry, concurrent pairing, revocation and
   cross-display isolation with automated tests and local runtime checks. Storage or
   identity-provider failures must fail closed, not open a preview bypass.
 
-Browser approval is not hardware attestation. The obsolete/root-accessible frame
+Browser pairing is not hardware attestation. The obsolete/root-accessible frame
 can expose everything displayed to it; use only non-sensitive content in this MVP.
 
 ### Optional owner email notifications
@@ -142,8 +153,9 @@ After scope is agreed:
    pairing codes and personal image URLs. Current traces are deliberately disabled;
    do not enable automatic URL tracing without a redaction review.
 6. Repeat local checks and a packaging dry run, then deploy only the approved target.
-7. Verify HTTPS assets, approval, weather, settings, denial, expiry and revocation
-   against the actual deployed routes from approved and unapproved browsers.
+7. Verify HTTPS assets, owner-authenticated pairing-code generation, display claim,
+   weather, settings, denial, expiry and revocation against the actual deployed routes
+   from paired and unpaired browsers. Confirm the code expires and cannot be replayed.
    Do not call a deployment secure just because its homepage loads.
 
 The display must work without an always-on Mac or an inbound home-network service.

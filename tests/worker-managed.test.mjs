@@ -36,11 +36,12 @@ test('managed custom and legacy origins are admitted independently while unliste
   assert.deepEqual(await (await worker.fetch(request('/api/bootstrap'), env)).json(), { mode: 'managed', enrolled: false });
   assert.deepEqual(await (await worker.fetch(request('/api/bootstrap', undefined, {}, secondaryOrigin), env)).json(), { mode: 'managed', enrolled: false });
   assert.equal((await worker.fetch(request('/api/bootstrap', undefined, {}, 'https://unlisted.example.com'), env)).status, 403);
-  assert.equal((await worker.fetch(request('/api/enrollment', {}, {}, secondaryOrigin), env)).status, 201);
-  assert.equal((await worker.fetch(request('/api/enrollment', {}, { Origin: 'https://unlisted.example.com' }, secondaryOrigin), env)).status, 403);
+  assert.equal((await worker.fetch(request('/api/enrollment', {}, {}, secondaryOrigin), env)).status, 404);
+  assert.equal((await worker.fetch(request('/api/enrollment/claim', { code: 'ABCDEFGHJK' }, {}, secondaryOrigin), env)).status, 401);
+  assert.equal((await worker.fetch(request('/api/enrollment/claim', { code: 'ABCDEFGHJK' }, { Origin: 'https://unlisted.example.com' }, secondaryOrigin), env)).status, 403);
 });
 
-test('managed routing integrates real signed owner verification, original-browser pairing, protected weather and revocation', async (t) => {
+test('managed routing integrates real signed owner verification, owner-issued pairing, protected weather and revocation', async (t) => {
   const db = new LocalD1();
   t.after(() => db.close());
   const emails = [];
@@ -81,14 +82,19 @@ test('managed routing integrates real signed owner verification, original-browse
   const alternateAdmin = await worker.fetch(request('/admin', undefined, ownerHeaders, secondaryOrigin), env);
   assert.equal(alternateAdmin.status, 200);
   assert.match(await alternateAdmin.text(), /Admin fixture/);
-  const enrollment = await worker.fetch(request('/api/enrollment', {}), env);
-  assert.equal(enrollment.status, 201);
-  const { code } = await enrollment.json();
-  const pending = enrollment.headers.getSetCookie()[0].split(';')[0];
-  assert.equal((await worker.fetch(request('/api/admin/approve', { code }, ownerHeaders), env)).status, 200);
-  const completed = await worker.fetch(request('/api/enrollment/complete', {}, { Cookie: pending }, origin, { city: 'Portland', region: 'Oregon', country: 'US' }), env);
-  assert.equal(completed.status, 200);
-  assert.equal(completed.headers.getSetCookie().length, 2);
+  assert.equal((await worker.fetch(request('/api/enrollment', {}), env)).status, 404);
+  assert.equal((await worker.fetch(request('/api/admin/approve', { code: 'ABCDEFGHJK' }, ownerHeaders), env)).status, 404);
+  assert.equal((await worker.fetch(request('/api/admin/pairing', {}), env)).status, 401);
+  const pairing = await worker.fetch(request('/api/admin/pairing', {}, ownerHeaders), env);
+  assert.equal(pairing.status, 201);
+  const { code, expiresAt } = await pairing.json();
+  assert.match(code, /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/);
+  assert.equal(typeof expiresAt, 'number');
+  assert.equal(pairing.headers.get('Cache-Control'), 'no-store');
+  const claimed = await worker.fetch(request('/api/enrollment/claim', { code }, {}, origin, { city: 'Portland', region: 'Oregon', country: 'US' }), env);
+  assert.equal(claimed.status, 200);
+  assert.deepEqual(await claimed.json(), { status: 'paired' });
+  assert.equal(claimed.headers.getSetCookie().length, 1);
   assert.equal(emails.length, 1);
   assert.equal(emails[0].to, vars.OWNER_EMAIL);
   assert.deepEqual(emails[0].from, { email: vars.NOTIFY_FROM_EMAIL, name: 'Sabio' });
@@ -97,7 +103,8 @@ test('managed routing integrates real signed owner verification, original-browse
   assert.match(emails[0].text, /Approximate network location: Portland, Oregon, US/);
   assert.match(emails[0].text, /Dashboard: https:\/\/example\.com\/admin/);
   assert.equal(emails[0].text.includes('127.0.0.1'), false);
-  const sessionCookie = completed.headers.getSetCookie().find((cookie) => cookie.startsWith('__Host-sabio_display=')).split(';')[0];
+  const sessionCookie = claimed.headers.getSetCookie().find((cookie) => cookie.startsWith('__Host-sabio_display=')).split(';')[0];
+  assert.equal((await worker.fetch(request('/api/enrollment/claim', { code }), env)).status, 401, 'pairing codes are single-use');
   const displayHeaders = {
     Cookie: sessionCookie,
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',

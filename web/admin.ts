@@ -5,7 +5,9 @@ const list = document.getElementById('admin-displays');
 const revokedList = document.getElementById('revoked-displays');
 const revokedHistory = document.getElementById('revoked-history') as HTMLDetailsElement | null;
 const revokedSummary = document.getElementById('revoked-summary');
-const input = document.getElementById('approve-code') as HTMLInputElement | null;
+const pairingForm = document.getElementById('pairing-form');
+const pairingCode = document.getElementById('pairing-code');
+const pairingButton = document.getElementById('pairing-generate') as HTMLButtonElement | null;
 const say = (message: string): void => { if (status) status.textContent = message; };
 let busy = false;
 
@@ -98,7 +100,7 @@ async function refresh(): Promise<void> {
         busy = true;
         button.disabled = true;
         void api('/api/admin/revoke', { id: displayId }).then(async () => {
-          say('Browser revoked. Protected requests will be denied immediately; an online display checks its approval at least once per minute.');
+          say('Browser revoked. Protected requests will be denied immediately; an online display checks its session at least once per minute.');
           await refresh();
         }).catch(() => { say('Revocation failed. Check owner access and retry.'); button.disabled = false; }).finally(() => { busy = false; });
       });
@@ -122,15 +124,27 @@ async function refresh(): Promise<void> {
   }
 }
 
-document.getElementById('approve-form')?.addEventListener('submit', (event) => {
+pairingForm?.addEventListener('submit', (event) => {
   event.preventDefault();
-  if (!input || busy) return;
+  if (busy) return;
   busy = true;
-  void api('/api/admin/approve', { code: input.value.trim().toUpperCase() }).then(async () => {
-    input.value = '';
-    say('Code approved. The original display browser can now finish pairing.');
-    await refresh();
-  }).catch(() => { say('Approval failed. Check the code, its expiry, and your owner authentication.'); }).finally(() => { busy = false; });
+  if (pairingButton) pairingButton.disabled = true;
+  if (pairingCode) pairingCode.textContent = '';
+  void api('/api/admin/pairing', {}).then((value) => {
+    if (!value || typeof value !== 'object' || !('code' in value) || typeof value.code !== 'string' ||
+        !/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/.test(value.code)) throw new Error('invalid_response');
+    if (pairingCode) pairingCode.textContent = value.code;
+    const expiresAt = 'expiresAt' in value && typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt)
+      ? new Date(value.expiresAt * 1000).toLocaleTimeString()
+      : 'ten minutes from now';
+    say(`Enter this code on the display before ${expiresAt}. It can be used once.`);
+  }).catch(() => {
+    if (pairingCode) pairingCode.textContent = '';
+    say('Could not generate a pairing code. Check owner authentication and service configuration, then retry.');
+  }).finally(() => {
+    busy = false;
+    if (pairingButton) pairingButton.disabled = false;
+  });
 });
 document.getElementById('admin-refresh')?.addEventListener('click', () => { void refresh(); });
 revokedHistory?.addEventListener('toggle', () => {

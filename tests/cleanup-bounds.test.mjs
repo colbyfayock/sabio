@@ -81,34 +81,41 @@ test('random valid-format display cookies drive one lookup and no cleanup batch'
   assert.ok(after.queries - before.queries <= 55, `bounded to one lookup per request, saw ${after.queries - before.queries}`);
 });
 
-test('rejected and rate-limited enrollment attempts do not run cleanup', async (t) => {
+test('rejected, invalid, and rate-limited pairing claims do not run cleanup', async (t) => {
   const db = new LocalD1();
   t.after(() => db.close());
   const call = (candidate) => access.handleAccessRequest(candidate, db, async () => true, ORIGIN);
 
-  assert.equal((await call(post('/api/enrollment', '{}', { 'Content-Type': 'text/plain' }))).status, 400);
-  assert.equal((await call(post('/api/enrollment', '{"unexpected":true}'))).status, 400);
-  assert.equal((await call(post('/api/enrollment', '{}', { 'CF-Connecting-IP': '' }))).status, 403);
-  assert.equal((await call(post('/api/enrollment', '{}', { Origin: 'https://other.example.com' }))).status, 403);
-  assert.equal((await call(request('/api/enrollment', { host: 'https://other.example.com' }))).status, 403);
+  assert.equal((await call(post('/api/enrollment/claim', '{}', { 'Content-Type': 'text/plain' }))).status, 400);
+  assert.equal((await call(post('/api/enrollment/claim', '{"unexpected":true}'))).status, 400);
+  assert.equal((await call(post('/api/enrollment/claim', '{"code":"ABCDEFGHJK"}', { 'CF-Connecting-IP': '' }))).status, 403);
+  assert.equal((await call(post('/api/enrollment/claim', '{"code":"ABCDEFGHJK"}', { Origin: 'https://other.example.com' }))).status, 403);
+  assert.equal((await call(request('/api/enrollment/claim', { host: 'https://other.example.com' }))).status, 403);
 
   const rejected = db.stats();
-  assert.equal(rejected.batches, 0, 'no cleanup for rejected requests');
+  assert.equal(rejected.batches, 0, 'no batches for rejected requests');
 
-  for (let attempt = 0; attempt < 5; attempt += 1) assert.equal((await call(post('/api/enrollment'))).status, 201);
-  const admitted = db.stats();
-  assert.equal(admitted.batches, 5, 'one bounded cleanup batch per admitted enrollment');
+  const now = Math.floor(Date.now() / 1000);
+  const code = 'ABCDEFGHJK';
+  db.sqlite.prepare(`INSERT INTO access_enrollments (id, display_id, pending_hash, code_hash, created_at, expires_at, status)
+    VALUES (?, ?, NULL, ?, ?, ?, 'pending')`)
+    .run(crypto.randomUUID(), crypto.randomUUID(), sha(`pairing:${code}`), now, now + 600);
+  assert.equal((await call(post('/api/enrollment/claim', JSON.stringify({ code })))).status, 200);
+  const claimed = db.stats();
+  assert.equal(claimed.batches - rejected.batches, 2, 'one claim batch plus one bounded cleanup');
 
-  for (let attempt = 0; attempt < 20; attempt += 1) assert.equal((await call(post('/api/enrollment'))).status, 429);
-  assert.equal(db.stats().batches, admitted.batches, 'rate-limited requests do not run cleanup');
+  assert.equal((await call(post('/api/enrollment/claim', JSON.stringify({ code })))).status, 401);
+  const replayed = db.stats();
+  assert.equal(replayed.batches - claimed.batches, 1, 'replays run the claim batch but never cleanup');
 
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    await call(post('/api/enrollment/complete', '{}', { Cookie: `__Host-sabio_pending=${cookieValue()}` }));
-  }
+  const invalidHeaders = { 'CF-Connecting-IP': '127.0.0.2' };
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    assert.equal((await call(post('/api/enrollment/complete', '{}', { Cookie: `__Host-sabio_pending=${cookieValue()}` }))).status, 401);
+    assert.equal((await call(post('/api/enrollment/claim', JSON.stringify({ code: 'ZZZZZZZZZZ' }), invalidHeaders))).status, 401);
   }
-  assert.equal(db.stats().batches, admitted.batches, 'invalid pending credentials do not run cleanup');
+  const invalid = db.stats();
+  assert.equal(invalid.batches - replayed.batches, 20, 'invalid claims run only their claim batch');
+  assert.equal((await call(post('/api/enrollment/claim', JSON.stringify({ code: 'ZZZZZZZZZZ' }), invalidHeaders))).status, 429);
+  assert.equal(db.stats().batches, invalid.batches, 'rate-limited requests do not run cleanup');
 });
 
 test('cleanup stays bounded, removes expired rows in foreign-key-safe order, and keeps live access', async (t) => {

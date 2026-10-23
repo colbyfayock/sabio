@@ -9,13 +9,16 @@ The executable **LOCAL PREVIEW** uses the Horizon layout: time and live Fahrenhe
 weather in a left sidebar, with one large photograph on the right. Set a US ZIP for
 weather and timezone; configure public image URLs for the slideshow. There is no
 calendar, agenda, or checklist. The default preview only enables weather/bootstrap
-on loopback. An owner-managed Cloudflare deployment now uses a real Access application,
-D1 database and managed Worker. Public-shell, unapproved-browser denial, Access login
-redirect and pending-enrollment checks passed against that deployment. An owner-run
-check on 2026-10-22 also paired a second browser, loaded the dashboard, resolved live
-weather, and revoked both browsers back to the approval gate. Access token lifetime,
-the scheduled cleanup run and log redaction still need deployed observation; the frame
-has not been tested. Do not put private account data or credentials into the app.
+on loopback. An owner-managed Cloudflare deployment uses a real Access application,
+D1 database and managed Worker. The deployed Worker still serves the earlier
+display-initiated approval flow. The source now replaces it with owner-initiated
+pairing, which is locally tested but has not been deployed. Earlier remote checks
+covered public-shell, unapproved-browser denial, Access login redirect and the prior
+pending-enrollment flow. An owner-run check on 2026-10-22 approved a second browser,
+loaded the dashboard, resolved live weather and revoked both browsers back to the
+access gate. Access token lifetime, the scheduled cleanup run and log redaction still
+need deployed observation; the frame has not been tested. Do not put private account
+data or credentials into the app.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
 The application should also support approved modern browsers. The old frame remains
@@ -23,7 +26,7 @@ an untrusted endpoint; root access and obsolete software are not made safe by lo
 
 ## Project boundary
 
-- **This repository:** dashboard UI, Cloudflare backend, browser enrollment, device
+- **This repository:** dashboard UI, Cloudflare backend, browser pairing, device
   access management, and data integrations.
 - **[Classic10 Charm frame setup](https://github.com/colbyfayock/classic10-charm-dashboard):**
   frame access, backup/recovery, launcher/navigation setup, device diagnostics, and
@@ -43,16 +46,18 @@ Weather / selected calendar / other providers
                     |
                   HTTPS
                     |
-       Individually approved display browsers
+       Owner-issued pairings for display browsers
 ```
 
 No always-on home computer, inbound home-network port, or Cloudflare Tunnel is
 required. The display needs internet access. Provider requests and selected data
 will be handled by Cloudflare; this is cloud hosting, not local-only processing.
 
-Administration belongs on a trusted modern device. A display shows a short-lived
-pairing code for the administrator to approve, then receives a revocable browser
-session that stays active while it keeps checking in. Approval identifies a browser
+Administration belongs on a trusted modern device. The owner generates a one-time
+pairing code in `/admin` and enters it on the display within ten minutes. The code is
+a bearer secret and only the newest owner-issued code stays valid; generate it only
+while pairing a display you control. A successful claim creates a revocable browser
+session that stays active while it keeps checking in. Pairing identifies a browser
 credential, **not cryptographic proof of a physical device**. Main provider credentials
 never belong on the frame.
 
@@ -80,7 +85,7 @@ one reusable owner policy. No paid upgrade or billing change was made by the dep
 - TypeScript and ES modules for server code; pinned pnpm tooling.
 - Standards-based display UI with an explicit Firefox 68 build/runtime target.
 - Mock/public data first; no sensitive account sessions on the legacy frame.
-- Test authentication, denial, enrollment expiry, revocation, and private-cache
+- Test authentication, denial, pairing-code expiry, revocation, and private-cache
   behavior before adding personal integrations or publishing private endpoints.
 
 ### Local CLI setup
@@ -135,7 +140,7 @@ reload falls back to labeled browser time until a lookup succeeds again.
 The old `/api/demo` endpoint has been removed. Weather loads through `POST /api/weather` when a ZIP is
 saved, refreshes every 10 minutes, and retries with backoff up to 30 minutes. It has
 its own 12-second browser timeout, shows timestamps/stale status, and does not fall
-back to sample weather. In preview, `/api/display` returns 401 and enrollment/admin
+back to sample weather. In preview, `/api/display` returns 401 and pairing/admin
 remain unavailable. Preview bootstrap/weather refuse non-loopback origins. Managed
 mode requires complete origin/owner configuration and D1; valid display sessions
 are required for weather, with server-side revocation and abuse limits. Unknown
@@ -240,14 +245,15 @@ explicitly saving replaces the owned record with the ZIP schema, and Reset remov
 
 ### Validation status
 
-- Node tests cover owner JWT signature/claims, original-browser pairing, one-time
-  consumption, expiry, revocation, CSRF, rate limits, routing/denial, response policy, weather provider/request/cache
-  and timezone validation, text-only rendering, weather backoff/timeouts/offline
-  recovery, photo preferences/loading/races/retries, timezone/DST/theme boundaries,
-  and fullscreen state/error handling. Cleanup regression tests assert that invalid
-  display/pending credentials and rejected enrollment attempts trigger no cleanup
-  batches, and that cleanup and bootstrap-polling stay bounded. These are unit tests,
-  not old-browser emulation.
+- Node tests cover owner JWT signature/claims, owner-issued one-time pairing, code
+  expiry and invalidation, replay/concurrent-claim denial, revocation, CSRF, rate
+  limits, routing/denial, response policy, weather provider/request/cache and timezone
+  validation, text-only rendering, weather backoff/timeouts/offline recovery, photo
+  preferences/loading/races/retries, timezone/DST/theme boundaries, and fullscreen
+  state/error handling. Cleanup regression tests assert that invalid display
+  credentials, invalid/replayed pairing claims and rejected/rate-limited requests
+  trigger no cleanup batches, and that cleanup and bootstrap-polling stay bounded.
+  These are unit tests, not old-browser emulation.
 - ZIP tests cover ZIP5/ZIP+4 syntax, leading zeros, old city-record handling, storage
   errors, persistence across refresh, cancel/reset/focus, and the location request flow.
 - Actual local `workerd` smoke checks passed for asset/API/error routes, including a
@@ -256,14 +262,15 @@ explicitly saving replaces the owned record with the ZIP schema, and Reset remov
   Browser checks cover sample image loading, pause/next, URL validation, photo settings
   across reload, focus restoration, ZIP entry, and mocked weather/timezone rendering.
   Axe checks report zero violations for both themes, the photo dialog, mock admin UI
-  and approval gate; the gate has one manual contrast incomplete. This is not a
+  and pairing gate; the gate has one manual contrast incomplete. This is not a
   complete accessibility certification or evidence of old-browser compatibility.
 - Initial managed deployment checks passed for HTTPS shell/headers, bootstrap denial,
-  forged-session rejection, protected admin redirects, CSRF rejection, pending enrollment
-  and private-file/static-fallback denial. A real browser saw the approval gate before
-  any photos/weather loaded. An owner-run 2026-10-22 check paired a display, loaded the
-  dashboard, resolved weather and confirmed revocation on two browsers; it is a single
-  observed pass, not an independent audit. Access TTL, the first scheduled cleanup and
+  forged-session rejection, protected admin redirects, CSRF rejection, the prior
+  pending-enrollment flow and private-file/static-fallback denial. A real browser saw
+  the access gate before any photos/weather loaded. An owner-run 2026-10-22 check
+  approved a display, loaded the dashboard, resolved weather and confirmed revocation
+  on two browsers; it is a single observed pass, not an independent audit. The new
+  owner-initiated flow is not deployed. Access TTL, the first scheduled cleanup and
   frame/Firefox-68 validation remain unverified.
 - Local D1 migration/test coverage and metadata unit/Worker integration tests cover
   coarse device labels, 5-minute update limits, weather-area timestamping, and excluding

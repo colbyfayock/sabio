@@ -131,6 +131,7 @@ test('preview bootstrap returns preview without opening the access gate', async 
   assert.equal(await page.initialize(), 'preview');
   assert.equal(page.element('access-dialog').hidden, true);
   assert.equal(page.page.hidden, false);
+  assert.ok(page.controls.every((control) => control.attributes.tabindex === undefined));
   assert.equal(page.requests.length, 1);
   assertSameOriginRequest(page.requests[0], '/api/bootstrap', 'GET');
   assert.equal(page.requests[0].options.body, undefined);
@@ -176,71 +177,93 @@ test('a rate-limited bootstrap check is treated as transient and does not reload
   assert.equal(page.reloadCount(), 0);
 });
 
-test('unapproved managed display shows and focuses an isolated access gate without data requests', async () => {
+test('unapproved managed display shows and focuses an isolated pairing form without data requests', async () => {
   const page = browser(async () => response({ mode: 'managed', enrolled: false }));
 
   assert.equal(await page.initialize(), null);
   assert.equal(page.element('access-dialog').hidden, false);
-  assert.equal(page.element('access-start').hidden, false);
-  assert.equal(page.element('access-start').focused, true);
+  assert.equal(page.element('access-pair-form').hidden, false);
+  assert.equal(page.element('access-retry').hidden, true);
+  assert.equal(page.element('access-pair-code').focused, true);
   assert.equal(page.page.hidden, true);
   assert.equal(page.page.attributes['aria-hidden'], 'true');
   assert.ok(page.controls.every((control) => control.attributes.tabindex === '-1'));
-  assert.match(page.element('access-status').textContent, /needs owner approval/);
+  assert.match(page.element('access-status').textContent, /Enter the one-time pairing code/);
   assert.equal(page.requests.length, 1);
   assertSameOriginRequest(page.requests[0], '/api/bootstrap', 'GET');
 });
 
-test('the page shell and pairing action stay hidden until bootstrap resolves', async () => {
+test('the page shell and pairing form stay hidden until bootstrap resolves', async () => {
   const html = await readFile('web/index.html', 'utf8');
   assert.match(html, /<main class="page-shell frame" hidden>/);
-  assert.match(html, /id="access-start" type="button" hidden/);
+  assert.match(html, /id="access-pair-form" hidden/);
+  assert.match(html, /id="access-pair-code"/);
+  assert.match(html, /id="access-pair-submit"/);
+  assert.match(html, /id="access-retry" type="button" hidden/);
+  assert.doesNotMatch(html, /access-start/);
   assert.match(html, /id="access-dialog" role="dialog" aria-modal="true" aria-labelledby="access-title">/);
 });
 
-test('pairing uses same-origin credentialed POSTs, polls pending completion, then reloads', async () => {
-  const code = '<img src=x onerror=alert(1)>';
-  let completionCount = 0;
+test('pairing submits a normalized same-origin code once and reloads after success', async () => {
   const page = browser(async (path) => {
     if (path === '/api/bootstrap') return response({ mode: 'managed', enrolled: false });
-    if (path === '/api/enrollment') return response({ code });
-    if (path === '/api/enrollment/complete') {
-      completionCount += 1;
-      return completionCount === 1
-        ? response({ status: 'pending' }, 202)
-        : response({ status: 'approved' }, 200);
-    }
+    if (path === '/api/enrollment/claim') return response({ status: 'paired' });
     assert.fail(`Unexpected request path: ${path}`);
   });
 
   assert.equal(await page.initialize(), null);
-  page.element('access-start').fire('click');
+  const input = page.element('access-pair-code');
+  const submit = page.element('access-pair-submit');
+  input.value = 'ab-cd ef gh jk';
+  let prevented = false;
+  await page.element('access-pair-form').fire('submit', { preventDefault() { prevented = true; } });
   await page.settle();
 
-  const displayedCode = page.element('access-code');
-  assert.equal(displayedCode.textContent, code);
-  assert.deepEqual(displayedCode.innerHTMLWrites, []);
-  assert.equal(page.element('access-start').disabled, true);
-  assert.ok([...page.timers.values()].some((timer) => timer.delay === 10000));
-
-  const enrollmentRequest = page.requests[1];
-  assertSameOriginRequest(enrollmentRequest, '/api/enrollment', 'POST');
-  assert.deepEqual(JSON.parse(enrollmentRequest.options.body), {});
-  assert.equal(enrollmentRequest.options.headers['Content-Type'], 'application/json');
-
-  await page.runTimer(10000);
-  assert.match(page.element('access-status').textContent, /Waiting for the owner/);
-  const pendingRequest = page.requests[2];
-  assertSameOriginRequest(pendingRequest, '/api/enrollment/complete', 'POST');
-  assert.deepEqual(JSON.parse(pendingRequest.options.body), {});
-  assert.ok([...page.timers.values()].some((timer) => timer.delay === 10000));
-
-  await page.runTimer(10000);
+  assert.equal(prevented, true);
   assert.equal(page.reloadCount(), 1);
-  assert.equal(page.requests.length, 4);
-  assertSameOriginRequest(page.requests[3], '/api/enrollment/complete', 'POST');
-  assert.deepEqual(JSON.parse(page.requests[3].options.body), {});
-  assert.ok(page.requests.every(({ input }) => !input.includes('@')));
+  assert.equal(page.requests.length, 2);
+  const claimRequest = page.requests[1];
+  assertSameOriginRequest(claimRequest, '/api/enrollment/claim', 'POST');
+  assert.deepEqual(JSON.parse(claimRequest.options.body), { code: 'ABCDEFGHJK' });
+  assert.equal(claimRequest.options.headers['Content-Type'], 'application/json');
+  assert.equal(submit.disabled, false);
+  assert.equal(input.disabled, false);
+  assert.equal(input.focused, true);
+  assert.deepEqual(input.innerHTMLWrites, []);
+  assert.ok(page.requests.every(({ input: path }) => !path.includes('@')));
+});
+
+test('an invalid code is rejected locally without a request, and denial messages keep the form usable', async () => {
+  let claimStatus = 401;
+  const page = browser(async (path) => {
+    if (path === '/api/bootstrap') return response({ mode: 'managed', enrolled: false });
+    if (path === '/api/enrollment/claim') return response({ error: 'pairing_denied' }, claimStatus);
+    assert.fail(`Unexpected request path: ${path}`);
+  });
+
+  assert.equal(await page.initialize(), null);
+  const input = page.element('access-pair-code');
+  const submit = page.element('access-pair-submit');
+  const form = page.element('access-pair-form');
+  input.value = 'short';
+  await form.fire('submit', { preventDefault() {} });
+  await page.settle();
+  assert.equal(page.requests.length, 1);
+  assert.match(page.element('access-status').textContent, /10-character pairing code/);
+
+  input.value = 'ABCDEFGHJK';
+  await form.fire('submit', { preventDefault() {} });
+  await page.settle();
+  assert.equal(page.reloadCount(), 0);
+  assert.match(page.element('access-status').textContent, /invalid or expired/);
+  assert.equal(input.disabled, false);
+  assert.equal(submit.disabled, false);
+
+  claimStatus = 429;
+  await form.fire('submit', { preventDefault() {} });
+  await page.settle();
+  assert.equal(page.reloadCount(), 0);
+  assert.match(page.element('access-status').textContent, /Too many pairing attempts/);
 });
 
 test('bootstrap failure fails closed, offers retry, and reloads on retry or online recovery', async () => {
@@ -248,20 +271,20 @@ test('bootstrap failure fails closed, offers retry, and reloads on retry or onli
 
   assert.equal(await page.initialize(), null);
   assert.equal(page.element('access-dialog').hidden, false);
-  assert.equal(page.element('access-start').hidden, false);
-  assert.equal(page.element('access-start').disabled, false);
-  assert.equal(page.element('access-start').textContent, 'Retry connection');
+  assert.equal(page.element('access-pair-form').hidden, true);
+  assert.equal(page.element('access-retry').hidden, false);
+  assert.equal(page.element('access-retry').focused, true);
   assert.equal(page.page.hidden, true);
   assert.match(page.element('access-status').textContent, /Cannot verify display access/);
   assert.equal(page.requests.length, 1);
 
-  page.element('access-start').fire('click');
+  page.element('access-retry').fire('click');
   page.fireWindow('online');
   assert.equal(page.reloadCount(), 2);
   assert.equal(page.requests.length, 1);
 });
 
-test('requests have a bounded 12-second timeout for bootstrap and enrollment', async () => {
+test('requests have a bounded 12-second timeout for bootstrap and pairing', async () => {
   const makeAbortableFetch = () => async (_path, options) => new Promise((_resolve, reject) => {
     options.signal.addEventListener('abort', () => reject(new Error('request aborted')), { once: true });
   });
@@ -273,15 +296,17 @@ test('requests have a bounded 12-second timeout for bootstrap and enrollment', a
   assert.equal(bootstrap.timers.size, 0);
   assert.match(bootstrap.element('access-status').textContent, /Cannot verify display access/);
 
-  const enrollment = browser(async (path, options) => {
+  const pairing = browser(async (path, options) => {
     if (path === '/api/bootstrap') return response({ mode: 'managed', enrolled: false });
     return makeAbortableFetch()(path, options);
   });
-  assert.equal(await enrollment.initialize(), null);
-  enrollment.element('access-start').fire('click');
-  await enrollment.settle();
-  await enrollment.runTimer(12000);
-  assert.equal(enrollment.element('access-start').disabled, false);
-  assert.match(enrollment.element('access-status').textContent, /Could not request a code/);
-  assert.equal(enrollment.timers.size, 0);
+  assert.equal(await pairing.initialize(), null);
+  pairing.element('access-pair-code').value = 'ABCDEFGHJK';
+  await pairing.element('access-pair-form').fire('submit', { preventDefault() {} });
+  await pairing.settle();
+  await pairing.runTimer(12000);
+  assert.equal(pairing.element('access-pair-submit').disabled, false);
+  assert.equal(pairing.element('access-pair-code').disabled, false);
+  assert.match(pairing.element('access-status').textContent, /Could not pair this display/);
+  assert.equal(pairing.timers.size, 0);
 });

@@ -56,9 +56,9 @@ test('private display data is denied on any host regardless of claimed identity'
   assert.equal(requests.length, 0);
 });
 
-test('preview enrollment and admin endpoints deny instead of pretending successful authentication', async () => {
+test('preview pairing and admin endpoints deny instead of pretending successful authentication', async () => {
   const { env, requests } = assets();
-  for (const path of ['/api/enrollment', '/api/enrollment/approve', '/api/admin', '/admin', '/auth/callback']) {
+  for (const path of ['/api/enrollment', '/api/enrollment/claim', '/api/enrollment/approve', '/api/admin', '/api/admin/pairing', '/admin', '/auth/callback']) {
     for (const method of ['GET', 'POST', 'OPTIONS']) {
       const response = await worker.fetch(new Request(`https://example.com${path}`, { method }), env);
       assert.equal(response.status, path === '/admin' && method !== 'GET' ? 405 : 503);

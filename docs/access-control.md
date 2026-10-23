@@ -4,16 +4,18 @@ Status: **locally tested managed-mode code, deployed and partly verified**. The 
 configuration stays `APP_MODE=preview`, uses an all-zero local D1 placeholder, and
 has no owner/origin configuration. A separate ignored owner-local production config
 binds the real D1 database, managed Worker and admin-only Access application. Its
-reusable policy allows only the selected owner's Cloudflare login email. Remote
-unapproved denial, login redirects, CSRF, pending enrollment, owner approval,
-authorized weather and revocation were checked; the cleanup cron, Access token
-lifetime, log redaction and hardware remain unverified. Do not connect private data or
-treat this document as authorization for additional cloud changes.
+reusable policy allows only the selected owner's Cloudflare login email. Remote checks
+of the earlier display-initiated flow covered unapproved denial, login redirects,
+CSRF, pending enrollment, owner approval, authorized weather and revocation. The
+source now uses owner-initiated pairing; that flow is locally tested but not deployed.
+The cleanup cron, Access token lifetime, log redaction and hardware remain unverified.
+Do not connect private data or treat this document as authorization for additional
+cloud changes.
 
 ## Modes and trust boundaries
 
 - Preview serves the public shell and permits bootstrap/weather only on loopback.
-  Fake cookies cannot enable managed behavior. Enrollment and administration remain
+  Fake cookies cannot enable managed behavior. Pairing and administration remain
   unavailable. No preview bypass is allowed on a public hostname.
 - Managed mode requires `APP_MODE=managed`, exact HTTPS `APP_ORIGIN`, a valid
   `ACCESS_TEAM_DOMAIN`, 64-character application `ACCESS_AUDIENCE`, `OWNER_EMAIL`
@@ -23,11 +25,11 @@ treat this document as authorization for additional cloud changes.
 - Public shell, CSS and JavaScript contain no owner settings or credentials.
   `/api/bootstrap` reports whether this browser is enrolled, without returning its
   credential. The frontend waits for bootstrap before starting photo/weather loads and
-  keeps the dashboard shell hidden until bootstrap confirms preview or an approved
+  keeps the dashboard shell hidden until bootstrap confirms preview or a paired
   managed session. Shell visibility is a UI boundary, not authorization; protected
   APIs still enforce the display session on every request.
 - Administration belongs behind a real Cloudflare Access application protecting
-  `/admin` and `/api/admin/*`. Display enrollment/API paths must not require that
+  `/admin` and `/api/admin/*`. Display pairing/API paths must not require that
   modern owner login on the legacy frame. Configure these policies explicitly and
   test their interaction on the chosen hostname. Owner-local setup created a reusable
   policy and one application with these two path destinations before publishing the
@@ -43,21 +45,30 @@ Signature, issuer, audience, expiry, not-before/issued-at, application token typ
 nonempty subject and configured owner email are checked. Plain email headers and
 service tokens do not authenticate the owner. No owner password is stored by Sabio.
 
-## Enrollment and sessions
+## Owner-initiated pairing and sessions
 
-1. An unapproved browser explicitly requests a code with `POST /api/enrollment {}`.
-   It receives a random ten-character code and a separate random 256-bit pending
-   cookie, valid for ten minutes. Stored pending/code values are SHA-256 hashes.
-2. The owner verifies the code on the intended display and submits it at `/admin`.
-   `POST /api/admin/approve { code }` approves only an unexpired pending request.
-3. The original browser polls `POST /api/enrollment/complete {}` with its pending
-   cookie. The visible code alone cannot claim a session. A D1 atomic batch creates
-   exactly one session and consumes the approved enrollment. Replays are denied.
-4. The browser receives a distinct random 256-bit `__Host-sabio_display` cookie;
-   only its hash is stored. Pending and display cookies are Secure, HttpOnly,
-   SameSite=Strict, Path=/ and have no Domain attribute. Duplicate credentials deny.
-5. A display session is a seven-day idle window, not a fixed 30-day lifetime. While an
-   approved display keeps checking in, bootstrap slides the window forward at most once
+1. The owner authenticates at `/admin` and explicitly requests a one-time code with
+   `POST /api/admin/pairing {}`. The Worker creates a pairing record with a random
+   ten-character code and returns the code once; only its SHA-256 hash is stored. The
+   code expires after ten minutes. A new owner-issued code expires any older unclaimed
+   owner code, so only the newest stays valid. The code is a bearer secret: generate it
+   only while pairing a display you control and enter it promptly.
+2. The unapproved display submits `POST /api/enrollment/claim { code }` as same-origin
+   JSON. There is no public display-initiated enrollment or approval endpoint. The code
+   is normalized to uppercase; invalid, expired and replayed codes return 401. Claim
+   attempts are rate-limited before the code lookup. The ten-character alphabet provides
+   roughly 50 bits of entropy, but the code is still exposable by shoulder-surfing,
+   phishing or a compromised admin browser.
+3. An atomic D1 batch consumes the pending pairing record, creates exactly one display
+   record and one session, and clears the code hash. Concurrent claims create at most
+   one session. The code has no standing authority until claimed. The claim query
+   requires `pending_hash IS NULL`, so legacy display-initiated pending rows from the
+   previous flow cannot be redeemed through the owner flow.
+4. On success the browser receives a random 256-bit `__Host-sabio_display` cookie; only
+   its hash is stored. The cookie is Secure, HttpOnly, SameSite=Strict, Path=/ and has
+   no Domain attribute. Duplicate credentials deny. No pending browser cookie is issued.
+5. A display session is a seven-day idle window, not a fixed 30-day lifetime. While a
+   paired display keeps checking in, bootstrap slides the window forward at most once
    per day and reissues the same Secure/HttpOnly cookie with a fresh `Max-Age`, so an
    active display does not need to pair again. Seven days without an authenticated
    request expires the session and requires pairing. There is no absolute lifetime cap:
@@ -66,12 +77,13 @@ service tokens do not authenticate the owner. No owner password is stored by Sab
    ID and expiry. Unknown display subroutes cannot select another display.
 6. Owner-only session listing and `POST /api/admin/revoke { id }` revoke a browser.
    Every protected request rechecks server state. Online displays also recheck
-    bootstrap once a minute and reload into the approval gate on denial.
+   bootstrap once a minute and reload into the pairing gate on denial.
 7. When the optional owner notification is configured, the Worker sends one email after
-   the session batch succeeds. Pending polls, replays and rejected claims send nothing.
-   The payload is limited to the event time, display ID, a coarse browser/OS label,
-   approximate network location (city/region/country only, not persisted by Sabio) and
-   the dashboard URL; see [releasing](releasing.md). Delivery failure never blocks pairing.
+   the session batch succeeds. Replayed, invalid, expired and rate-limited claims send
+   nothing. The payload is limited to the event time, display ID, a coarse browser/OS
+   label, approximate network location (city/region/country only, not persisted by
+   Sabio) and the dashboard URL; see [releasing](releasing.md). Delivery failure never
+   blocks pairing.
 
 Admin metadata is descriptive only: the server parses a short browser/OS/device-type
 label from the untrusted User-Agent and saves no raw header. It is updated through
@@ -101,46 +113,48 @@ managed D1 records. No private display content is implemented.
 Access routes require an exact configured request origin/host and reject query or
 encoded-path alternatives. State changes require JSON, an exact Origin header and
 bounded bodies. SameSite cookies complement these checks, not replace them. If multiple
-hostnames are configured, session cookies remain host-only: an approved display using
+hostnames are configured, session cookies remain host-only: a paired display using
 one hostname does not transfer its cookie to another and must pair there separately.
 
 Rate budgets are atomic D1 counters with fixed windows:
 
 | Operation | Budget |
 | --- | --- |
-| Create pending enrollment | 5/hour/client IP, 50/hour globally |
+| Create owner pairing code | 10/minute for the single owner |
+| Claim pairing code | 20/minute/client IP, 200/minute globally |
 | Verify owner token | 30/minute/client IP, 200/minute globally |
 | Owner mutations | 30/minute for the single owner |
-| Poll pending enrollment | 60/minute/pending credential |
-| Poll bootstrap | 12/minute/approved display |
-| Fetch weather | 6/minute/approved display |
+| Poll bootstrap | 12/minute/paired display |
+| Fetch weather | 6/minute/paired display |
 
 Client IP comes from Cloudflare's `CF-Connecting-IP`, not arbitrary forwarded headers;
-missing/invalid values deny creation/owner verification. Hashes are not anonymous:
-the rate keys hash IPs with fixed domain-separation strings, not a secret salt.
-Global limits bound work but can deliberately trade availability for cost protection
-under distributed abuse. These app limits do not substitute for a deployment-level
-traffic/quota review or guarantee that a Free-plan budget cannot be exhausted.
+missing/invalid values deny pairing claims and owner verification. Hashes are not
+anonymous: the rate keys hash IPs with fixed domain-separation strings, not a secret
+salt. Global limits bound work but can deliberately trade availability for cost
+protection under distributed abuse. These app limits do not substitute for a
+deployment-level traffic/quota review or guarantee that a Free-plan budget cannot be
+exhausted.
 
 Cleanup never runs for unauthenticated, invalid or rejected requests. A bounded
-six-statement batch (at most 25/50 rows per statement) runs only after an enrollment
-is admitted or an owner is verified, and a scheduled trigger runs the same batch every
+six-statement batch (at most 25/50 rows per statement) runs only after a pairing claim
+succeeds or an owner is verified, and a scheduled trigger runs the same batch every
 15 minutes so retention does not depend on traffic. Expired rows are already denied by
-every authorization query, so cleanup only reclaims storage. Expired pending records,
-old rate windows and expired session/display records are removed in foreign-key-safe
-order. Revoked displays remain listed until expiry. Consumed enrollment rows remain
-while referenced by their display, then expire with it. Additive migration 0004 adds
-`expires_at` indexes for the display and enrollment scans; the scheduled trigger takes
-effect on the next owner-approved deployment.
+every authorization query, so cleanup only reclaims storage. Expired unclaimed pairing
+records, old rate windows and expired session/display records are removed in
+foreign-key-safe order. Revoked displays remain listed until expiry. Consumed pairing
+rows remain while referenced by their display, then expire with it. Additive migration
+0004 adds `expires_at` indexes for the display and pairing scans; the scheduled trigger
+takes effect on the next owner-approved deployment.
 
 ## Validation and remaining release gates
 
 Tests use the real SQLite schema, synthetic RSA-signed JWTs, and an isolated local
 D1 runtime with remote bindings disabled. They cover wrong owner/issuer/audience,
-forgery, expiry, original-browser proof, concurrent one-time consumption, replay,
-revocation, CSRF, cross-host denial, rate limits, storage failures and browser gates.
-An integrated Worker test exercises signed owner approval through protected weather
-and revocation. These are not tests against an actual Access account or deployed D1.
+forgery, owner-issued pairing, code expiry/invalidation, concurrent one-time
+consumption, replay, revocation, CSRF, cross-host denial, rate limits, storage failures
+and browser gates. An integrated Worker test exercises signed owner pairing through
+protected weather and revocation. These are not tests against an actual Access account
+or deployed D1.
 
 Before release: configure/approve the real Access application and owner identity,
 resource bindings and canonical HTTPS hostname; review production logs/quotas;

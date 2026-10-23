@@ -4,19 +4,28 @@ Sabio is an executable **LOCAL PREVIEW**, with a locally tested managed access-c
 path and an initial owner-managed deployment, not a fully production-validated service.
 `/health` and static shell assets are
 public. The old `/api/demo` endpoint has been removed. The checked-in preview only
-enables bootstrap and unauthenticated weather on loopback; enrollment/admin are
+enables bootstrap and unauthenticated weather on loopback; pairing/admin are
 unavailable and display access is denied. Managed mode requires complete owner,
 origin and D1 configuration; missing or invalid configuration fails closed.
 
 Managed code verifies signed Cloudflare Access application JWTs against the fixed
 configured team's certificates, checks issuer/audience/lifetime and actual owner
-email, and rejects plain identity headers. Pairing uses a separate high-entropy
-pending-browser cookie and atomic one-time consumption; display sessions are scoped,
-revocable and use a seven-day idle renewal. Active displays renew at most once per day;
-seven days without a check-in requires pairing again. Weather requires a session in
-managed mode. The initial deployment has a real owner-only Access policy/application
-and D1 database. Unapproved denial, admin login redirects, pending enrollment, and an
-owner-run approval, authorized weather and revocation pass have been verified remotely.
+email, and rejects plain identity headers. The current source pairs a display only
+from the owner-authenticated admin page: `POST /api/admin/pairing` issues a one-time
+ten-character code with a ten-minute lifetime, stores only its hash, and invalidates
+any older owner-issued code. The unpaired display claims the code with a same-origin
+JSON `POST /api/enrollment/claim`; an atomic D1 batch creates the display and exactly
+one scoped, revocable session, and replays are denied. The code is a bearer secret:
+anyone who obtains it before the intended display can claim the session. Its roughly
+50 bits of entropy and 20/minute/client-IP plus 200/minute global claim limits bound
+guessing, not shoulder-surfing or phishing. In the current source there is no public
+display-initiated approval or pending-cookie flow. Display sessions use a seven-day
+idle renewal; active displays renew at most once per day, and seven days without a
+check-in requires pairing again. Weather requires a session in managed mode. The
+initial deployment has a real owner-only Access policy/application and D1 database, but
+it still serves the earlier pending-enrollment/approval flow; the owner-initiated flow
+is locally tested and not deployed. Earlier remote checks covered unapproved denial,
+admin login redirects, the prior approval flow, authorized weather and revocation.
 Access token lifetime, the scheduled cleanup run and production logs still need
 observation. When enabled, an optional owner email on session issuance contains the
 event time, display ID, coarse browser/OS label, approximate network location
@@ -57,7 +66,7 @@ gesture. These behaviors do not establish security or compatibility on the actua
 The initial display target uses obsolete Android/Firefox with existing root access.
 The frame is not a trusted store for passwords, provider tokens or sensitive data.
 Server-side credentials reduce exposure but cannot hide displayed content from the
-display itself. Browser enrollment is not hardware attestation.
+display itself. Browser pairing is not hardware attestation.
 
 The local authorization implementation and remaining gaps are documented in
 [access control](docs/access-control.md). Before deployment, verify the real Access
@@ -120,7 +129,7 @@ details and optional owner name are deployed in additive migrations 0002/0003.
 ## Coordinated security audit backlog
 
 A broad app-and-device audit is still required before relying on Sabio for sensitive
-use. Cover the deployed Worker/Access/D1 and routes, enrollment/revocation, caches,
+use. Cover the deployed Worker/Access/D1 and routes, pairing/revocation, caches,
 logs, provider metadata, browser-local settings and image URLs together with the actual
 frame's unsupported Android/Firefox build, root network ADB, permissions/services,
 network isolation/outbound traffic, credentials, recovery and owner data-handling

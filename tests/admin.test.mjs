@@ -27,7 +27,7 @@ class Element {
   async fire(type, event = { preventDefault() {} }) { return this.listeners.get(type)?.(event); }
 }
 
-function start(displays) {
+function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, status: 201 }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
@@ -41,6 +41,13 @@ function start(displays) {
     if (path === '/api/admin/displays') return { ok: true, status: 200, json: async () => ({ displays }) };
     if (path === '/api/admin/label') return { ok: true, status: 200, json: async () => ({ status: 'updated' }) };
     if (path === '/api/admin/revoke') return { ok: true, status: 204, json: async () => null };
+    if (path === '/api/admin/pairing') {
+      return {
+        ok: pairing.status === 201,
+        status: pairing.status,
+        json: async () => ({ code: pairing.code, expiresAt: pairing.expiresAt }),
+      };
+    }
     throw new Error('unexpected_route');
   };
   vm.runInNewContext(source, { document, window, fetch, AbortController, Date, JSON, Number, String, Boolean, Array, Error });
@@ -84,4 +91,38 @@ test('empty revoked history is hidden, and active entries still allow nickname e
   await new Promise(setImmediate);
   const rename = app.calls.find((call) => call.path === '/api/admin/label');
   assert.deepEqual(JSON.parse(rename.options.body), { id: 'active-id', name: 'Kitchen display' });
+});
+
+test('the owner can generate a one-time pairing code and sees its expiry instructions', async () => {
+  const app = start([]);
+  await new Promise(setImmediate);
+  const form = app.element('pairing-form');
+  const button = app.element('pairing-generate');
+  const code = app.element('pairing-code');
+  assert.equal(form.listeners.has('submit'), true);
+
+  await form.fire('submit', { preventDefault() {} });
+  await new Promise(setImmediate);
+
+  const pairing = app.calls.find((call) => call.path === '/api/admin/pairing');
+  assert.equal(pairing.options.method, 'POST');
+  assert.equal(pairing.options.credentials, 'same-origin');
+  assert.equal(pairing.options.headers['Content-Type'], 'application/json');
+  assert.equal(pairing.options.body, '{}');
+  assert.equal(code.textContent, 'ABCDEFGHJK');
+  assert.match(app.element('admin-status').textContent, /before .*It can be used once\./);
+  assert.equal(button.disabled, false);
+});
+
+test('a failed pairing-code request clears the code and keeps the form usable', async () => {
+  const app = start([], { code: '', expiresAt: 0, status: 503 });
+  await new Promise(setImmediate);
+  const form = app.element('pairing-form');
+  const code = app.element('pairing-code');
+  code.textContent = 'OLDCODE';
+  await form.fire('submit', { preventDefault() {} });
+  await new Promise(setImmediate);
+  assert.equal(code.textContent, '');
+  assert.match(app.element('admin-status').textContent, /Could not generate a pairing code/);
+  assert.equal(app.element('pairing-generate').disabled, false);
 });

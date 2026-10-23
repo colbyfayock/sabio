@@ -1,36 +1,61 @@
-/** A public shell is not approval. Start display data loads only after bootstrap. */
+/** A public shell is not authorization. Start display data loads only after bootstrap. */
 export async function initializeAccess(): Promise<'preview' | 'managed' | null> {
   const dialog = document.getElementById('access-dialog');
   const status = document.getElementById('access-status');
-  const code = document.getElementById('access-code');
-  const start = document.getElementById('access-start') as HTMLButtonElement | null;
+  const form = document.getElementById('access-pair-form') as HTMLFormElement | null;
+  const input = document.getElementById('access-pair-code') as HTMLInputElement | null;
+  const pairButton = document.getElementById('access-pair-submit') as HTMLButtonElement | null;
+  const retry = document.getElementById('access-retry') as HTMLButtonElement | null;
   const page = document.querySelector<HTMLElement>('.page-shell');
-  let pending = false;
+  let busy = false;
   let bootstrapFailed = false;
-  let poll: number | null = null;
   const say = (message: string): void => { if (status) status.textContent = message; };
-  if (start) start.hidden = true;
+
+  const focusDialog = (): void => {
+    if (!dialog) return;
+    dialog.setAttribute('tabindex', '-1');
+    dialog.focus();
+  };
   const reveal = (): void => {
     if (dialog) dialog.hidden = true;
+    if (form) form.hidden = true;
+    if (retry) retry.hidden = true;
     if (page) {
       page.hidden = false;
       page.removeAttribute('aria-hidden');
+      page.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex="-1"]')
+        .forEach((element) => element.removeAttribute('tabindex'));
     }
   };
-  const show = (): void => {
+  const isolatePage = (): void => {
     if (dialog) dialog.hidden = false;
-    if (page) {
-      page.hidden = true;
-      page.setAttribute('aria-hidden', 'true');
-      page.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]').forEach((element) => element.setAttribute('tabindex', '-1'));
+    if (!page) return;
+    page.hidden = true;
+    page.setAttribute('aria-hidden', 'true');
+    page.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]')
+      .forEach((element) => element.setAttribute('tabindex', '-1'));
+  };
+  const showPairing = (): void => {
+    isolatePage();
+    if (form) form.hidden = false;
+    if (retry) retry.hidden = true;
+    if (input) input.focus();
+    else focusDialog();
+  };
+  const showFailure = (): void => {
+    isolatePage();
+    if (form) form.hidden = true;
+    if (retry) {
+      retry.hidden = false;
+      retry.focus();
+    } else {
+      focusDialog();
     }
-    if (start) {
-      start.hidden = false;
-      start.focus();
-    } else if (dialog) {
-      dialog.setAttribute('tabindex', '-1');
-      dialog.focus();
-    }
+  };
+  const focusGate = (): void => {
+    if (form && !form.hidden && input) input.focus();
+    else if (retry && !retry.hidden) retry.focus();
+    else focusDialog();
   };
   const request = async (path: string, body?: object): Promise<Response> => {
     const controller = new AbortController();
@@ -43,51 +68,50 @@ export async function initializeAccess(): Promise<'preview' | 'managed' | null> 
       });
     } finally { window.clearTimeout(timeout); }
   };
-  const checkPending = async (): Promise<void> => {
-    try {
-      const response = await request('/api/enrollment/complete', {});
-      if (response.status === 200) { window.location.reload(); return; }
-      if (response.status !== 202) {
-        pending = false;
-        if (start) { start.disabled = false; start.textContent = 'Request a new code'; }
-        say('Pairing expired or unavailable. Request a new code, or ask the owner to check the service.');
-        return;
-      }
-      say('Waiting for the owner to approve this code on a trusted browser.');
-    } catch {
-      say('Connection interrupted. Waiting to retry pairing.');
+
+  form?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!input || busy) return;
+    const code = input.value.replace(/[\s-]+/g, '').toUpperCase();
+    if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/.test(code)) {
+      say('Enter the 10-character pairing code from /admin.');
+      input.focus();
+      return;
     }
-    if (pending) poll = window.setTimeout(() => { void checkPending(); }, 10000);
-  };
-  start?.addEventListener('click', () => {
-    if (bootstrapFailed) { window.location.reload(); return; }
-    if (pending) return;
-    start.disabled = true;
+    busy = true;
+    if (pairButton) pairButton.disabled = true;
+    input.disabled = true;
+    say('Pairing this display…');
     void (async () => {
       try {
-        const response = await request('/api/enrollment', {});
-        const value: unknown = await response.json();
-        if (!response.ok || !value || typeof value !== 'object' || !('code' in value) || typeof value.code !== 'string' || value.code.length > 32) throw new Error('pairing_unavailable');
-        if (code) code.textContent = value.code;
-        pending = true;
-        say('Approve this code from the owner administration page. Codes expire after ten minutes.');
-        poll = window.setTimeout(() => { void checkPending(); }, 10000);
+        const response = await request('/api/enrollment/claim', { code });
+        if (response.status === 200) {
+          window.location.reload();
+          return;
+        }
+        if (response.status === 429) {
+          say('Too many pairing attempts. Wait a minute, then try again.');
+        } else if (response.status === 401) {
+          say('That code is invalid or expired. Generate a new code from /admin.');
+        } else {
+          say('Could not pair this display. Check the connection and service configuration, then try again.');
+        }
       } catch {
-        say('Could not request a code. Check the connection and service configuration, then retry.');
-        start.disabled = false;
+        say('Could not pair this display. Check the connection and service configuration, then try again.');
+      } finally {
+        busy = false;
+        if (pairButton) pairButton.disabled = false;
+        input.disabled = false;
+        input.focus();
       }
     })();
   });
-  const focusGate = (): void => {
-    if (start && !start.disabled) start.focus();
-    else if (dialog) { dialog.setAttribute('tabindex', '-1'); dialog.focus(); }
-  };
+  retry?.addEventListener('click', () => { window.location.reload(); });
   document.addEventListener('focusin', (event) => {
     if (dialog && !dialog.hidden && !dialog.contains(event.target as Node)) focusGate();
   });
-  dialog?.addEventListener('keydown', (event) => { if (event.key === 'Tab') { event.preventDefault(); focusGate(); } });
   window.addEventListener('online', () => { if (bootstrapFailed) window.location.reload(); });
-  window.addEventListener('pagehide', () => { if (poll !== null) window.clearTimeout(poll); });
+
   try {
     const response = await request('/api/bootstrap');
     const value: unknown = await response.json();
@@ -96,7 +120,7 @@ export async function initializeAccess(): Promise<'preview' | 'managed' | null> 
     if (value.mode !== 'managed' || !('enrolled' in value)) throw new Error('bootstrap_failed');
     if (value.enrolled === true) {
       reveal();
-      // Re-check approval periodically even if weather is offline or has not been configured.
+      // Re-check the session periodically even if weather is offline or has not been configured.
       window.setInterval(() => {
         void request('/api/bootstrap').then(async (result) => {
           // A rate-limited bootstrap is transient, not evidence of revocation.
@@ -106,13 +130,12 @@ export async function initializeAccess(): Promise<'preview' | 'managed' | null> 
       }, 60000);
       return 'managed';
     }
-    show();
-    say('This browser needs owner approval before it can display the dashboard.');
+    showPairing();
+    say('Enter the one-time pairing code from /admin to pair this browser.');
   } catch {
-    show();
+    showFailure();
     bootstrapFailed = true;
-    say('Cannot verify display access. Check the connection and reload.');
-    if (start) { start.disabled = false; start.textContent = 'Retry connection'; }
+    say('Cannot verify display access. Check the connection, then reload.');
   }
   return null;
 }

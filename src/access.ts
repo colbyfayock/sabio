@@ -1,12 +1,6 @@
 import { boundedJson } from './weather';
 import { describeBrowser } from './display-metadata';
 
-interface EnrollmentRow {
-  id: string;
-  display_id: string;
-  status: string;
-}
-
 interface CountRow {
   count: number;
 }
@@ -26,18 +20,16 @@ interface DisplayRow {
   weatherLocationAt: number | null;
 }
 
-const PENDING_COOKIE = '__Host-sabio_pending';
 const DISPLAY_COOKIE = '__Host-sabio_display';
 const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const PAIRING_LENGTH = 10;
 const MAX_BODY_BYTES = 512;
-const ENROLLMENT_SECONDS = 10 * 60;
+const PAIRING_SECONDS = 10 * 60;
 // A display session stays valid while it keeps checking in. Renewal is a sliding
 // idle window: seven days without an authenticated request requires pairing again.
 const SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60;
 const SESSION_RENEW_SECONDS = 24 * 60 * 60;
 const RATE_MINUTE_SECONDS = 60;
-const RATE_HOUR_SECONDS = 60 * 60;
 
 function json(value: object, status = 200, headers: HeadersInit = {}, setCookies: string[] = []): Response {
   const responseHeaders = new Headers({
@@ -129,51 +121,7 @@ function cookie(name: string, value: string, maxAge: number): string {
   return `${name}=${value}; Max-Age=${maxAge}; Path=/; Secure; HttpOnly; SameSite=Strict`;
 }
 
-function deletedCookie(name: string): string {
-  return `${name}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict`;
-}
-
-async function readEmptyJson(request: Request): Promise<boolean> {
-  const contentType = request.headers.get('Content-Type') ?? '';
-  if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(contentType.trim())) return false;
-  const length = request.headers.get('Content-Length');
-  if (length && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES)) return false;
-  if (!request.body) return false;
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_BODY_BYTES) {
-        await reader.cancel();
-        return false;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    return false;
-  }
-
-  try {
-    const body = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      body.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(body));
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      && Object.keys(parsed).length === 0;
-  } catch {
-    return false;
-  }
-}
-
-async function readAdminBody(request: Request): Promise<Record<string, string> | null> {
+async function readSingleStringBody(request: Request): Promise<Record<string, string> | null> {
   const contentType = request.headers.get('Content-Type') ?? '';
   if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(contentType.trim())) return null;
   const length = request.headers.get('Content-Length');
@@ -378,16 +326,15 @@ export async function handleAccessRequest(
 
   const route = decodedPath;
   const isMutation = request.method === 'POST'
-    && ['/api/enrollment', '/api/enrollment/complete', '/api/admin/approve', '/api/admin/revoke', '/api/admin/label'].includes(route);
+    && ['/api/enrollment/claim', '/api/admin/pairing', '/api/admin/revoke', '/api/admin/label'].includes(route);
   if (isMutation && request.headers.get('Origin') !== canonical.origin) {
     return errorResponse(403, 'origin_not_allowed');
   }
 
   const knownRoutes: Record<string, string> = {
-    '/api/enrollment': 'POST',
-    '/api/enrollment/complete': 'POST',
+    '/api/enrollment/claim': 'POST',
     '/api/admin/displays': 'GET',
-    '/api/admin/approve': 'POST',
+    '/api/admin/pairing': 'POST',
     '/api/admin/revoke': 'POST',
     '/api/admin/label': 'POST',
     '/api/display': 'GET',
@@ -411,88 +358,44 @@ export async function handleAccessRequest(
   try {
     const now = nowSeconds();
 
-    if (route === '/api/enrollment') {
-      if (!await readEmptyJson(request)) return errorResponse(400, 'invalid_request');
+    if (route === '/api/enrollment/claim') {
+      const body = await readSingleStringBody(request);
+      if (!body || typeof body.code !== 'string') return errorResponse(400, 'invalid_request');
+      const code = body.code.trim().toUpperCase();
+      if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/.test(code)) {
+        return errorResponse(400, 'invalid_request');
+      }
       const ipHeader = request.headers.get('CF-Connecting-IP');
       const ip = ipHeader === null ? null : validIp(ipHeader);
       if (!ip) return errorResponse(403, 'origin_not_allowed');
       const ipHash = await hash(`access-ip:${ip.value}`);
-      // Reject a full global budget before creating IP rows; only admitted IP attempts
-      // consume the global quota, so one blocked client cannot drain it repeatedly.
-      if (!await hasRateBudget(db, 'enrollment-global', now, RATE_HOUR_SECONDS, 50)
-        || !await takeRateLimit(db, `enrollment-ip:${ipHash}`, now, RATE_HOUR_SECONDS, 5)
-        || !await takeRateLimit(db, 'enrollment-global', now, RATE_HOUR_SECONDS, 50)) {
-        return errorResponse(429, 'rate_limited', { 'Retry-After': String(RATE_HOUR_SECONDS) });
-      }
-
-      const pendingToken = opaqueToken();
-      const pendingHash = await hash(`pending:${pendingToken}`);
-      let code = '';
-      let codeHash = '';
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        code = pairingCode();
-        codeHash = await hash(`pairing:${code}`);
-        const existing = await db.prepare('SELECT id FROM access_enrollments WHERE code_hash = ? LIMIT 1')
-          .bind(codeHash).first<{ id: string }>();
-        if (!existing) break;
-        code = '';
-      }
-      if (!code) return databaseError();
-      const displayId = crypto.randomUUID();
-      const enrollmentId = crypto.randomUUID();
-      const expiresAt = now + ENROLLMENT_SECONDS;
-      await db.prepare(`INSERT INTO access_enrollments
-        (id, display_id, pending_hash, code_hash, created_at, expires_at, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending')`)
-        .bind(enrollmentId, displayId, pendingHash, codeHash, now, expiresAt).run();
-      // Housekeeping runs only for an admitted, rate-limited enrollment request.
-      await admittedCleanup(db, now);
-      return json({ code, expiresAt }, 201, {}, [cookie(PENDING_COOKIE, pendingToken, ENROLLMENT_SECONDS)]);
-    }
-
-    if (route === '/api/enrollment/complete') {
-      if (!await readEmptyJson(request)) return errorResponse(400, 'invalid_request');
-      const pendingToken = readCookie(request, PENDING_COOKIE);
-      if (!pendingToken) return errorResponse(401, 'enrollment_access_denied');
-      const pendingHash = await hash(`pending:${pendingToken}`);
-      const enrollment = await db.prepare(`SELECT id, display_id, status FROM access_enrollments
-        WHERE pending_hash = ? AND expires_at > ? LIMIT 1`).bind(pendingHash, now).first<EnrollmentRow>();
-      if (!enrollment) return errorResponse(401, 'enrollment_access_denied');
-      const pollKey = await hash(`pending-poll:${pendingHash}`);
-      if (!await takeRateLimit(db, `poll:${pollKey}`, now, RATE_MINUTE_SECONDS, 60)) {
+      if (!await hasRateBudget(db, 'claim-global', now, RATE_MINUTE_SECONDS, 200)
+        || !await takeRateLimit(db, `claim-ip:${ipHash}`, now, RATE_MINUTE_SECONDS, 20)
+        || !await takeRateLimit(db, 'claim-global', now, RATE_MINUTE_SECONDS, 200)) {
         return errorResponse(429, 'rate_limited', { 'Retry-After': String(RATE_MINUTE_SECONDS) });
       }
-      if (enrollment.status === 'pending') {
-        return json({ status: 'pending' }, 202);
-      }
-      if (enrollment.status !== 'approved') return errorResponse(401, 'enrollment_access_denied');
 
+      const codeHash = await hash(`pairing:${code}`);
       const sessionToken = opaqueToken();
       const sessionHash = await hash(`session:${sessionToken}`);
       const claim = crypto.randomUUID();
+      const expiresAt = now + SESSION_IDLE_SECONDS;
       const batch = await db.batch<Record<string, unknown>>([
+        db.prepare(`UPDATE access_enrollments SET status = 'consumed', consumed_at = ?, consume_claim = ?, code_hash = NULL
+          WHERE code_hash = ? AND pending_hash IS NULL AND status = 'pending' AND expires_at > ?
+          RETURNING id, display_id`).bind(now, claim, codeHash, now),
+        db.prepare(`INSERT INTO access_displays (id, enrollment_id, created_at, expires_at)
+          SELECT display_id, id, ?, ? FROM access_enrollments
+          WHERE consume_claim = ? AND status = 'consumed'
+          RETURNING id`).bind(now, expiresAt, claim),
         db.prepare(`INSERT INTO access_display_sessions (token_hash, display_id, issued_at, expires_at)
-          SELECT ?, d.id, ?, d.expires_at FROM access_displays d
-          JOIN access_enrollments e ON e.id = d.enrollment_id
-          WHERE e.pending_hash = ? AND e.status = 'approved' AND e.expires_at > ?
-            AND d.revoked_at IS NULL AND d.expires_at > ?
-            AND NOT EXISTS (SELECT 1 FROM access_display_sessions s WHERE s.display_id = d.id)
-          RETURNING token_hash, expires_at`).bind(sessionHash, now, pendingHash, now, now),
-        db.prepare(`UPDATE access_enrollments SET status = 'consumed', consumed_at = ?, consume_claim = ?, pending_hash = NULL
-          WHERE pending_hash = ? AND status = 'approved' AND expires_at > ?
-            AND EXISTS (SELECT 1 FROM access_display_sessions s JOIN access_displays d ON d.id = s.display_id
-              WHERE s.token_hash = ? AND s.display_id = access_enrollments.display_id
-                AND s.expires_at > ? AND d.revoked_at IS NULL AND d.expires_at > ?)
-          RETURNING id, display_id`).bind(now, claim, pendingHash, now, sessionHash, now, now),
+          SELECT ?, display_id, ?, ? FROM access_enrollments
+          WHERE consume_claim = ? AND status = 'consumed'
+          RETURNING token_hash`).bind(sessionHash, now, expiresAt, claim),
       ]);
-      const issuedSession = batch[0]?.results?.[0];
-      const sessionExpiresAt = issuedSession?.expires_at;
-      if (!issuedSession || typeof sessionExpiresAt !== 'number' || !Number.isSafeInteger(sessionExpiresAt)
-        || batch[1]?.results?.length !== 1) {
-        return errorResponse(401, 'enrollment_access_denied');
-      }
+      if (batch[2]?.results?.length !== 1) return errorResponse(401, 'pairing_denied');
       if (notifyDisplay) {
-        const consumed = batch[1]?.results?.[0];
+        const consumed = batch[0]?.results?.[0];
         const displayId = consumed && typeof consumed.display_id === 'string' ? consumed.display_id : null;
         if (displayId) {
           const description = describeBrowser(request.headers.get('User-Agent'));
@@ -509,9 +412,9 @@ export async function handleAccessRequest(
           }
         }
       }
-      return json({ status: 'approved' }, 200, {}, [
-        cookie(DISPLAY_COOKIE, sessionToken, sessionExpiresAt - now),
-        deletedCookie(PENDING_COOKIE),
+      await admittedCleanup(db, now);
+      return json({ status: 'paired' }, 200, {}, [
+        cookie(DISPLAY_COOKIE, sessionToken, SESSION_IDLE_SECONDS),
       ]);
     }
 
@@ -571,30 +474,42 @@ export async function handleAccessRequest(
       return json({ status: 'updated', name: body.name });
     }
 
-    const body = await readAdminBody(request);
-    if (!body) return errorResponse(400, 'invalid_request');
-
-    if (route === '/api/admin/approve') {
-      const code = body.code;
-      if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/.test(code)) return errorResponse(400, 'invalid_request');
-      const codeHash = await hash(`pairing:${code}`);
-      const claim = crypto.randomUUID();
-      const expiresAt = now + SESSION_IDLE_SECONDS;
-      const batch = await db.batch([
-        db.prepare(`UPDATE access_enrollments SET status = 'approved', approved_at = ?, approval_claim = ?, code_hash = NULL
-          WHERE code_hash = ? AND status = 'pending' AND expires_at > ?
-          RETURNING id, display_id`).bind(now, claim, codeHash, now),
-        db.prepare(`INSERT INTO access_displays (id, enrollment_id, created_at, expires_at)
-          SELECT display_id, id, ?, ? FROM access_enrollments
-          WHERE status = 'approved' AND approval_claim = ?
-          RETURNING id`).bind(now, expiresAt, claim),
+    if (route === '/api/admin/pairing') {
+      if (!await takeRateLimit(db, 'admin-pairing', now, RATE_MINUTE_SECONDS, 10)) {
+        return errorResponse(429, 'rate_limited', { 'Retry-After': String(RATE_MINUTE_SECONDS) });
+      }
+      // Only the newest owner-issued code stays live, limiting the window for a
+      // copied code. The code itself is never stored in plaintext.
+      let code = '';
+      let codeHash = '';
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        code = pairingCode();
+        codeHash = await hash(`pairing:${code}`);
+        const existing = await db.prepare('SELECT id FROM access_enrollments WHERE code_hash = ? LIMIT 1')
+          .bind(codeHash).first<{ id: string }>();
+        if (!existing) break;
+        code = '';
+      }
+      if (!code) return databaseError();
+      const pairingId = crypto.randomUUID();
+      const displayId = crypto.randomUUID();
+      const expiresAt = now + PAIRING_SECONDS;
+      await db.batch([
+        db.prepare(`UPDATE access_enrollments SET expires_at = ?
+          WHERE status = 'pending' AND pending_hash IS NULL AND expires_at > ?`).bind(now, now),
+        db.prepare(`INSERT INTO access_enrollments
+          (id, display_id, pending_hash, code_hash, created_at, expires_at, status)
+          VALUES (?, ?, NULL, ?, ?, ?, 'pending')`)
+          .bind(pairingId, displayId, codeHash, now, expiresAt),
       ]);
-      if (!batch[1]?.results || batch[1].results.length !== 1) return errorResponse(404, 'enrollment_not_found');
-      return json({ status: 'approved' });
+      return json({ code, expiresAt }, 201);
     }
 
+    const body = await readSingleStringBody(request);
+    if (!body) return errorResponse(400, 'invalid_request');
+
     const id = body.id;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
       return errorResponse(400, 'invalid_request');
     }
     const update = await db.prepare(`UPDATE access_displays SET revoked_at = ?
