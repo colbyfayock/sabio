@@ -63,7 +63,7 @@ async function refresh(): Promise<void> {
       const nameLabel = document.createElement('label');
       const nameInput = document.createElement('input');
       const nameSave = document.createElement('button');
-      label.textContent = `Browser ID: ${displayId} · Added ${new Date(display.createdAt * 1000).toLocaleString()} · Expires ${new Date(display.expiresAt * 1000).toLocaleString()}`;
+      label.textContent = `Browser ID: ${displayId} · Added ${new Date(display.createdAt * 1000).toLocaleString()}${isRevoked ? '' : ' · Renews while active'} · Expires ${new Date(display.expiresAt * 1000).toLocaleString()}`;
       nameLabel.htmlFor = `display-name-${displayId}`;
       nameLabel.textContent = 'Display name';
       nameInput.id = `display-name-${displayId}`;

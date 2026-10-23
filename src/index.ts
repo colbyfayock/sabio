@@ -5,9 +5,12 @@ import {
   handleAccessRequest,
   limitDisplayBootstrap,
   limitDisplayWeather,
+  refreshDisplaySession,
+  type DisplaySessionNotice,
 } from './access';
 import { validOwnerConfiguration, verifyOwner } from './owner';
 import { recordDisplayCheckIn, recordDisplayWeatherArea } from './display-metadata';
+import { notifyNewDisplay } from './notifications';
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -82,7 +85,7 @@ async function owner(request: Request, env: Env): Promise<boolean> {
 
 /** All requests enter the Worker first; only explicitly listed static assets escape API routing. */
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     let path: string;
     try {
       path = decodeURIComponent(new URL(request.url).pathname);
@@ -108,8 +111,10 @@ export default {
         if (!await limitDisplayBootstrap(request, env.DB, session.id)) {
           return json(request, { error: 'rate_limited' }, 429, { 'Retry-After': '60' });
         }
+        const refreshedCookie = await refreshDisplaySession(request, env.DB, session);
         await recordDisplayCheckIn(request, env.DB, session.id);
-        return json(request, { mode: 'managed', enrolled: true });
+        return json(request, { mode: 'managed', enrolled: true }, 200,
+          refreshedCookie ? { 'Set-Cookie': refreshedCookie } : {});
       } catch { return json(request, { error: 'access_unavailable' }, 503); }
     }
 
@@ -118,7 +123,24 @@ export default {
         if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
         if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
         const requestOrigin = new URL(request.url).origin;
-        const response = await handleAccessRequest(request, env.DB, (candidate) => owner(candidate, env), requestOrigin);
+        const notifyDisplay = (notice: DisplaySessionNotice): Promise<void> => {
+          // Notification is optional: preview and unconfigured deployments stay silent.
+          if (!env.EMAIL || !env.NOTIFY_FROM_EMAIL) return Promise.resolve();
+          const delivery = notifyNewDisplay({
+            email: env.EMAIL,
+            ownerEmail: env.OWNER_EMAIL,
+            fromEmail: env.NOTIFY_FROM_EMAIL,
+            adminUrl: `${requestOrigin}/admin`,
+          }, notice).then((sent) => {
+            if (!sent) console.warn(JSON.stringify({ event: 'display_notification_failed' }));
+          });
+          if (typeof ctx?.waitUntil === 'function') {
+            ctx.waitUntil(delivery);
+            return Promise.resolve();
+          }
+          return delivery;
+        };
+        const response = await handleAccessRequest(request, env.DB, (candidate) => owner(candidate, env), requestOrigin, notifyDisplay);
         return secure(request, response || json(request, { error: 'not_found' }, 404));
       }
       if (path === '/api/display' || path.startsWith('/api/display/')) return json(request, { error: 'display_access_unavailable' }, 401);

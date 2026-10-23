@@ -36,8 +36,8 @@ function post(path, body = '{}', headers = {}) {
   return makeRequest(path, { method: 'POST', body, headers });
 }
 
-async function call(db, request, verifyAdmin = async () => true, origin = ORIGIN) {
-  return access.handleAccessRequest(request, db, verifyAdmin, origin);
+async function call(db, request, verifyAdmin = async () => true, origin = ORIGIN, notifyDisplay) {
+  return access.handleAccessRequest(request, db, verifyAdmin, origin, notifyDisplay);
 }
 
 async function enroll(db) {
@@ -57,8 +57,8 @@ async function approve(db, code, verifyAdmin = async () => true) {
   return call(db, post('/api/admin/approve', JSON.stringify({ code })), verifyAdmin);
 }
 
-async function finish(db, pendingCookie) {
-  return call(db, post('/api/enrollment/complete', '{}', { Cookie: pendingCookie }));
+async function finish(db, pendingCookie, notifyDisplay) {
+  return call(db, post('/api/enrollment/complete', '{}', { Cookie: pendingCookie }), async () => true, ORIGIN, notifyDisplay);
 }
 
 test('unrelated routes return null; matching hosts, paths, methods, queries, and CSRF are bounded', async (t) => {
@@ -300,4 +300,83 @@ test('D1 failures return safe 503 responses or deny helper access', async (t) =>
   assert.deepEqual(await response.json(), { error: 'temporarily_unavailable' });
   assert.equal(response.headers.get('Set-Cookie'), null);
   assert.equal(await access.getDisplaySession(makeRequest('/api/display', { headers: { Cookie: '__Host-sabio_display=' + 'a'.repeat(64) } }), broken), null);
+});
+
+test('active display sessions renew daily, reissue the cookie, and never revive revoked or expired rows', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const enrollment = await enroll(db);
+  assert.equal((await approve(db, enrollment.code)).status, 200);
+  const completed = await finish(db, enrollment.cookie);
+  const sessionCookie = completed.headers.getSetCookie()
+    .find((value) => value.startsWith('__Host-sabio_display=')).split(';', 1)[0];
+  const token = sessionCookie.split('=')[1];
+  const displayId = db.sqlite.prepare('SELECT id FROM access_displays').get().id;
+  const now = Math.floor(Date.now() / 1000);
+  const idle = 7 * 24 * 60 * 60;
+  const request = makeRequest('/api/bootstrap', { headers: { Cookie: sessionCookie } });
+
+  // A fresh session is not renewed.
+  const fresh = await access.getDisplaySession(request, db);
+  assert.equal(await access.refreshDisplaySession(request, db, fresh), null);
+  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, now + idle);
+
+  // Bring both rows into the renewal window.
+  db.sqlite.prepare('UPDATE access_displays SET expires_at = ?').run(now + idle - 24 * 60 * 60);
+  db.sqlite.prepare('UPDATE access_display_sessions SET expires_at = ?').run(now + idle - 24 * 60 * 60);
+  const due = await access.getDisplaySession(request, db);
+  const refreshed = await access.refreshDisplaySession(request, db, due);
+  assert.equal(refreshed, `__Host-sabio_display=${token}; Max-Age=${idle}; Path=/; Secure; HttpOnly; SameSite=Strict`);
+  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, now + idle);
+  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_display_sessions').get().expires_at, now + idle);
+
+  // Renewal is at most once per day.
+  const current = await access.getDisplaySession(request, db);
+  assert.equal(await access.refreshDisplaySession(request, db, { ...current, expiresAt: current.expiresAt }), null);
+
+  // No cookie means no renewal.
+  assert.equal(await access.refreshDisplaySession(makeRequest('/api/bootstrap'), db, { id: displayId, expiresAt: now + idle - 60 }), null);
+
+  // A revoked display is never revived, even if the caller supplies a future expiry.
+  db.sqlite.prepare('UPDATE access_displays SET revoked_at = ?').run(now);
+  db.sqlite.prepare('UPDATE access_displays SET expires_at = ?').run(now + idle - 24 * 60 * 60);
+  db.sqlite.prepare('UPDATE access_display_sessions SET expires_at = ?').run(now + idle - 24 * 60 * 60);
+  assert.equal(await access.getDisplaySession(request, db), null);
+  assert.equal(await access.refreshDisplaySession(request, db, { id: displayId, expiresAt: now + idle - 60 }), null);
+  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, now + idle - 24 * 60 * 60);
+
+  // An expired display is not extended by a stale or forged expiry.
+  db.sqlite.prepare('UPDATE access_displays SET revoked_at = NULL, expires_at = ?').run(now - 1);
+  db.sqlite.prepare('UPDATE access_display_sessions SET expires_at = ?').run(now + idle - 24 * 60 * 60);
+  assert.equal(await access.refreshDisplaySession(request, db, { id: displayId, expiresAt: now + idle - 60 }), null);
+  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, now - 1);
+});
+
+test('the owner is notified exactly once after a session is actually issued', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const notices = [];
+  const notify = async (notice) => { notices.push(notice); };
+  const enrollment = await enroll(db);
+
+  assert.equal((await finish(db, enrollment.cookie, notify)).status, 202);
+  assert.equal(notices.length, 0, 'pending polling never notifies');
+  assert.equal((await approve(db, enrollment.code)).status, 200);
+
+  const completed = await finish(db, enrollment.cookie, notify);
+  assert.equal(completed.status, 200);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0].displayId, /^[0-9a-f-]{36}$/);
+  assert.equal(notices[0].at, Math.floor(Date.now() / 1000));
+  assert.equal(notices[0].browser, null);
+  assert.equal(notices[0].os, null);
+
+  assert.equal((await finish(db, enrollment.cookie, notify)).status, 401);
+  assert.equal(notices.length, 1, 'replays never notify');
+
+  const second = await enroll(db);
+  assert.equal((await approve(db, second.code)).status, 200);
+  const failing = await finish(db, second.cookie, async () => { throw new Error('synthetic mail failure'); });
+  assert.equal(failing.status, 200, 'notification failure must not block session issuance');
+  assert.equal(failing.headers.getSetCookie().filter((value) => value.startsWith('__Host-sabio_display=')).length, 1);
 });

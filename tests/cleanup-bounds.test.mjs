@@ -45,7 +45,7 @@ const managedEnv = (db) => ({
 });
 
 /** Insert a live, already-consumed display session and return its cookie value. */
-function seedSession(db, now, { expiresAt = now + 600 } = {}) {
+function seedSession(db, now, { expiresAt = now + 7 * 24 * 60 * 60 } = {}) {
   const displayId = crypto.randomUUID();
   const enrollmentId = crypto.randomUUID();
   const token = cookieValue();

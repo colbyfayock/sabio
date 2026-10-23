@@ -12,7 +12,8 @@
     "APP_ALLOWED_ORIGINS": "",
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUDIENCE": "",
-    "OWNER_EMAIL": ""
+    "OWNER_EMAIL": "",
+    "NOTIFY_FROM_EMAIL": ""
   },
   "d1_databases": [
     {

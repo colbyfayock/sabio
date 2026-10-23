@@ -1,4 +1,5 @@
 import { boundedJson } from './weather';
+import { describeBrowser } from './display-metadata';
 
 interface EnrollmentRow {
   id: string;
@@ -31,7 +32,10 @@ const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const PAIRING_LENGTH = 10;
 const MAX_BODY_BYTES = 512;
 const ENROLLMENT_SECONDS = 10 * 60;
-const SESSION_SECONDS = 30 * 24 * 60 * 60;
+// A display session stays valid while it keeps checking in. Renewal is a sliding
+// idle window: seven days without an authenticated request requires pairing again.
+const SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60;
+const SESSION_RENEW_SECONDS = 24 * 60 * 60;
 const RATE_MINUTE_SECONDS = 60;
 const RATE_HOUR_SECONDS = 60 * 60;
 
@@ -327,11 +331,19 @@ function databaseError(): Response {
 }
 
 /** Handle only access routes. Unrelated requests return null for the caller to route. */
+export interface DisplaySessionNotice {
+  displayId: string;
+  at: number;
+  browser: string | null;
+  os: string | null;
+}
+
 export async function handleAccessRequest(
   request: Request,
   db: D1Database,
   verifyAdmin: (request: Request) => Promise<boolean>,
   origin: string,
+  notifyDisplay?: (notice: DisplaySessionNotice) => Promise<void>,
 ): Promise<Response | null> {
   let url: URL;
   let decodedPath: string;
@@ -465,6 +477,18 @@ export async function handleAccessRequest(
         || batch[1]?.results?.length !== 1) {
         return errorResponse(401, 'enrollment_access_denied');
       }
+      if (notifyDisplay) {
+        const consumed = batch[1]?.results?.[0];
+        const displayId = consumed && typeof consumed.display_id === 'string' ? consumed.display_id : null;
+        if (displayId) {
+          const description = describeBrowser(request.headers.get('User-Agent'));
+          try {
+            await notifyDisplay({ displayId, at: now, browser: description.browser, os: description.os });
+          } catch {
+            // A notification failure must never undo an issued session.
+          }
+        }
+      }
       return json({ status: 'approved' }, 200, {}, [
         cookie(DISPLAY_COOKIE, sessionToken, sessionExpiresAt - now),
         deletedCookie(PENDING_COOKIE),
@@ -535,7 +559,7 @@ export async function handleAccessRequest(
       if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/.test(code)) return errorResponse(400, 'invalid_request');
       const codeHash = await hash(`pairing:${code}`);
       const claim = crypto.randomUUID();
-      const expiresAt = now + SESSION_SECONDS;
+      const expiresAt = now + SESSION_IDLE_SECONDS;
       const batch = await db.batch([
         db.prepare(`UPDATE access_enrollments SET status = 'approved', approved_at = ?, approval_claim = ?, code_hash = NULL
           WHERE code_hash = ? AND status = 'pending' AND expires_at > ?
@@ -593,6 +617,47 @@ export async function getDisplaySession(
 ): Promise<{ id: string; expiresAt: number } | null> {
   try {
     return await readDisplaySession(request, db);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Slide an active display session forward and return a replacement Set-Cookie value.
+ * Renewal is limited to once per SESSION_RENEW_SECONDS so normal polling does not
+ * become a D1 write on every request. Invalid, revoked or expired sessions never renew.
+ */
+export async function refreshDisplaySession(
+  request: Request,
+  db: D1Database,
+  session: { id: string; expiresAt: number },
+): Promise<string | null> {
+  try {
+    const url = new URL(request.url);
+    if (url.protocol !== 'https:' || url.search || url.hash) return null;
+    if (!/^[0-9a-f-]{36}$/i.test(session.id)) return null;
+    if (!Number.isSafeInteger(session.expiresAt)) return null;
+    const token = readCookie(request, DISPLAY_COOKIE);
+    if (!token) return null;
+    const now = nowSeconds();
+    if (session.expiresAt <= now) return null;
+    // Freshly renewed sessions skip the write; this caps renewal at once per day.
+    if (session.expiresAt - now > SESSION_IDLE_SECONDS - SESSION_RENEW_SECONDS) return null;
+
+    const expiresAt = now + SESSION_IDLE_SECONDS;
+    const batch = await db.batch([
+      db.prepare(`UPDATE access_displays SET expires_at = ?
+        WHERE id = ? AND revoked_at IS NULL AND expires_at > ? RETURNING id`)
+        .bind(expiresAt, session.id, now),
+      db.prepare(`UPDATE access_display_sessions SET expires_at = ?
+        WHERE display_id = ? AND expires_at > ?
+          AND EXISTS (SELECT 1 FROM access_displays d
+            WHERE d.id = ? AND d.revoked_at IS NULL AND d.expires_at > ?)
+        RETURNING token_hash`)
+        .bind(expiresAt, session.id, now, session.id, now),
+    ]);
+    if (batch[0]?.results?.length !== 1 || batch[1]?.results?.length !== 1) return null;
+    return cookie(DISPLAY_COOKIE, token, SESSION_IDLE_SECONDS);
   } catch {
     return null;
   }

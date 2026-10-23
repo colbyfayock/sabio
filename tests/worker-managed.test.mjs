@@ -8,7 +8,7 @@ const result = await build({ entryPoints: ['src/index.ts'], bundle: true, format
 const { default: worker } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 const origin = 'https://example.com';
 const secondaryOrigin = 'https://alternate.example.com';
-const vars = { APP_MODE: 'managed', APP_ORIGIN: origin, APP_ALLOWED_ORIGINS: `${origin},${secondaryOrigin}`, ACCESS_TEAM_DOMAIN: 'https://sample-team.cloudflareaccess.com', ACCESS_AUDIENCE: 'a'.repeat(64), OWNER_EMAIL: 'owner@example.com' };
+const vars = { APP_MODE: 'managed', APP_ORIGIN: origin, APP_ALLOWED_ORIGINS: `${origin},${secondaryOrigin}`, ACCESS_TEAM_DOMAIN: 'https://sample-team.cloudflareaccess.com', ACCESS_AUDIENCE: 'a'.repeat(64), OWNER_EMAIL: 'owner@example.com', NOTIFY_FROM_EMAIL: 'notify@example.com' };
 const request = (path, body, headers = {}, base = origin) => new Request(base + path, {
   method: body === undefined ? 'GET' : 'POST',
   headers: { Origin: base, 'Content-Type': 'application/json', 'CF-Connecting-IP': '127.0.0.1', ...headers },
@@ -39,7 +39,13 @@ test('managed custom and legacy origins are admitted independently while unliste
 test('managed routing integrates real signed owner verification, original-browser pairing, protected weather and revocation', async (t) => {
   const db = new LocalD1();
   t.after(() => db.close());
-  const env = { ...vars, DB: db, ASSETS: { async fetch() { return new Response('<!doctype html><title>Admin fixture</title>'); } } };
+  const emails = [];
+  const env = {
+    ...vars,
+    DB: db,
+    EMAIL: { async send(message) { emails.push(message); return { messageId: 'synthetic' }; } },
+    ASSETS: { async fetch() { return new Response('<!doctype html><title>Admin fixture</title>'); } },
+  };
   const keys = await generateKeyPair('RS256');
   const jwk = { ...await exportJWK(keys.publicKey), kid: 'test-key', alg: 'RS256', use: 'sig' };
   const now = Math.floor(Date.now() / 1000);
@@ -79,12 +85,28 @@ test('managed routing integrates real signed owner verification, original-browse
   const completed = await worker.fetch(request('/api/enrollment/complete', {}, { Cookie: pending }), env);
   assert.equal(completed.status, 200);
   assert.equal(completed.headers.getSetCookie().length, 2);
+  assert.equal(emails.length, 1);
+  assert.equal(emails[0].to, vars.OWNER_EMAIL);
+  assert.equal(emails[0].from, vars.NOTIFY_FROM_EMAIL);
+  assert.equal(emails[0].subject, 'Sabio: new display paired');
+  assert.match(emails[0].text, /Display: [0-9a-f-]{36}/);
+  assert.equal(emails[0].text.includes('127.0.0.1'), false);
   const sessionCookie = completed.headers.getSetCookie().find((cookie) => cookie.startsWith('__Host-sabio_display=')).split(';')[0];
   const displayHeaders = {
     Cookie: sessionCookie,
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
   };
-  assert.deepEqual(await (await worker.fetch(request('/api/bootstrap', undefined, displayHeaders), env)).json(), { mode: 'managed', enrolled: true });
+  const firstBootstrap = await worker.fetch(request('/api/bootstrap', undefined, displayHeaders), env);
+  assert.deepEqual(await firstBootstrap.json(), { mode: 'managed', enrolled: true });
+  assert.equal(firstBootstrap.headers.get('Set-Cookie'), null, 'a fresh session is not reissued');
+  // An active session inside the daily renewal window is extended and reissued.
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  db.sqlite.prepare('UPDATE access_displays SET expires_at = ?').run(nowSeconds + 6 * 24 * 60 * 60);
+  db.sqlite.prepare('UPDATE access_display_sessions SET expires_at = ?').run(nowSeconds + 6 * 24 * 60 * 60);
+  const renewed = await worker.fetch(request('/api/bootstrap', undefined, displayHeaders), env);
+  assert.deepEqual(await renewed.json(), { mode: 'managed', enrolled: true });
+  assert.match(renewed.headers.get('Set-Cookie'), /^__Host-sabio_display=[a-f0-9]{64}; Max-Age=604800; Path=\/; Secure; HttpOnly; SameSite=Strict$/);
+  assert.equal(emails.length, 1, 'renewal does not send another pairing email');
   // Percent-encoded aliases resolve to the same route and enforce the same checks.
   const encodedBootstrap = await worker.fetch(request('/api/%62ootstrap', undefined, displayHeaders), env);
   assert.equal(encodedBootstrap.status, 200);
@@ -102,6 +124,7 @@ test('managed routing integrates real signed owner verification, original-browse
   const forecast = await weather.json();
   assert.equal(forecast.timeZone, 'America/New_York');
   const { displays } = await (await worker.fetch(request('/api/admin/displays', undefined, ownerHeaders), env)).json();
+  assert.match(emails[0].text, new RegExp(`Display: ${displays[0].id}`));
   assert.deepEqual(displays[0].device, { type: 'desktop', browser: 'Chrome 124.0', os: 'Linux' });
   assert.equal(typeof displays[0].lastSeenAt, 'number');
   assert.deepEqual(displays[0].weatherArea.label, 'Sample Town, Sample State');

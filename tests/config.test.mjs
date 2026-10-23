@@ -16,7 +16,7 @@ test('local preview uses loopback with a local-only D1 placeholder, empty identi
   assert.equal(config.workers_dev, false);
   assert.equal(config.preview_urls, false);
   assert.equal(config.send_metrics, false);
-  assert.deepEqual(config.vars, { APP_MODE: 'preview', APP_ORIGIN: '', APP_ALLOWED_ORIGINS: '', ACCESS_TEAM_DOMAIN: '', ACCESS_AUDIENCE: '', OWNER_EMAIL: '' });
+  assert.deepEqual(config.vars, { APP_MODE: 'preview', APP_ORIGIN: '', APP_ALLOWED_ORIGINS: '', ACCESS_TEAM_DOMAIN: '', ACCESS_AUDIENCE: '', OWNER_EMAIL: '', NOTIFY_FROM_EMAIL: '' });
   assert.equal(config.d1_databases.length, 1);
   assert.equal(config.d1_databases[0].database_id, '00000000-0000-0000-0000-000000000000');
   assert.equal(config.d1_databases[0].remote, false);
