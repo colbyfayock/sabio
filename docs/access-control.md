@@ -4,11 +4,13 @@ Status: **locally tested managed-mode code, deployed and partly verified**. The 
 configuration stays `APP_MODE=preview`, uses an all-zero local D1 placeholder, and
 has no owner/origin configuration. A separate ignored owner-local production config
 binds the real D1 database, managed Worker and admin-only Access application. Its
-reusable policy allows only the selected owner's Cloudflare login email. Remote checks
-of the earlier display-initiated flow covered unapproved denial, login redirects,
-CSRF, pending enrollment, owner approval, authorized weather and revocation. The
-source now uses owner-initiated pairing; that flow is locally tested but not deployed.
-The cleanup cron, Access token lifetime, log redaction and hardware remain unverified.
+reusable policy allows only the selected owner's Cloudflare login email. The
+owner-initiated pairing flow deployed on 2026-10-23; unauthenticated route/denial checks
+passed, an owner-run claim succeeded, replay was denied, and the owner confirmed the
+notification email arrived. Revocation of that new test session remains pending.
+Earlier remote checks of the display-initiated flow covered CSRF, pending enrollment,
+owner approval, authorized weather and revocation. The cleanup cron, Access token
+lifetime, log redaction and hardware remain unverified.
 Do not connect private data or treat this document as authorization for additional
 cloud changes.
 

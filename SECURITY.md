@@ -18,17 +18,17 @@ JSON `POST /api/enrollment/claim`; an atomic D1 batch creates the display and ex
 one scoped, revocable session, and replays are denied. The code is a bearer secret:
 anyone who obtains it before the intended display can claim the session. Its roughly
 50 bits of entropy and 20/minute/client-IP plus 200/minute global claim limits bound
-guessing, not shoulder-surfing or phishing. In the current source there is no public
+guessing, not shoulder-surfing or phishing. The deployed source has no public
 display-initiated approval or pending-cookie flow. Display sessions use a seven-day
 idle renewal; active displays renew at most once per day, and seven days without a
 check-in requires pairing again. Weather requires a session in managed mode. The
-initial deployment has a real owner-only Access policy/application and D1 database, but
-it still serves the earlier pending-enrollment/approval flow; the owner-initiated flow
-is locally tested and not deployed. Earlier remote checks covered unapproved denial,
-admin login redirects, the prior approval flow, authorized weather and revocation.
-Access token lifetime, the scheduled cleanup run and production logs still need
-observation. When enabled, an optional owner email on session issuance contains the
-event time, display ID, coarse browser/OS label, approximate network location
+owner-initiated flow deployed on 2026-10-23 passed unauthenticated route/denial checks;
+an owner-run pairing succeeded, replay was denied and the owner confirmed the email.
+Revocation of that test session remains pending. Earlier remote checks also covered
+the prior flow, authorized weather and revocation. Access token lifetime, the scheduled
+cleanup run and production logs still need observation. When enabled, an optional owner
+email on session issuance contains the event time, display ID, coarse browser/OS label,
+approximate network location
 (city/region/country only, not persisted by Sabio) and a dashboard link, never IP,
 ZIP, precise coordinates, raw User-Agent, cookies or display content. The owner
 deployment enables it.

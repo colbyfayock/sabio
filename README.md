@@ -10,15 +10,16 @@ weather in a left sidebar, with one large photograph on the right. Set a US ZIP 
 weather and timezone; configure public image URLs for the slideshow. There is no
 calendar, agenda, or checklist. The default preview only enables weather/bootstrap
 on loopback. An owner-managed Cloudflare deployment uses a real Access application,
-D1 database and managed Worker. The deployed Worker still serves the earlier
-display-initiated approval flow. The source now replaces it with owner-initiated
-pairing, which is locally tested but has not been deployed. Earlier remote checks
-covered public-shell, unapproved-browser denial, Access login redirect and the prior
-pending-enrollment flow. An owner-run check on 2026-10-22 approved a second browser,
-loaded the dashboard, resolved live weather and revoked both browsers back to the
-access gate. Access token lifetime, the scheduled cleanup run and log redaction still
-need deployed observation; the frame has not been tested. Do not put private account
-data or credentials into the app.
+D1 database and managed Worker. On 2026-10-23, commit `b929da4` deployed the
+owner-initiated pairing flow to the existing Worker without a schema migration.
+Unauthenticated production checks confirmed public enrollment/completion routes return
+404, admin pairing remains behind Access, cross-origin claims are denied, and an
+unknown code cannot create a session. An owner-run pairing succeeded, replay was
+denied, and the owner confirmed the notification email arrived; revocation of this new
+test session is still pending. Earlier checks covered the prior flow. Access token
+lifetime, the scheduled cleanup run and log redaction still need deployed observation;
+the frame has not been tested. Do not put private account data or credentials into the
+app.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
 The application should also support approved modern browsers. The old frame remains
@@ -266,12 +267,13 @@ explicitly saving replaces the owned record with the ZIP schema, and Reset remov
   complete accessibility certification or evidence of old-browser compatibility.
 - Initial managed deployment checks passed for HTTPS shell/headers, bootstrap denial,
   forged-session rejection, protected admin redirects, CSRF rejection, the prior
-  pending-enrollment flow and private-file/static-fallback denial. A real browser saw
-  the access gate before any photos/weather loaded. An owner-run 2026-10-22 check
-  approved a display, loaded the dashboard, resolved weather and confirmed revocation
-  on two browsers; it is a single observed pass, not an independent audit. The new
-  owner-initiated flow is not deployed. Access TTL, the first scheduled cleanup and
-  frame/Firefox-68 validation remain unverified.
+  pending-enrollment flow and private-file/static-fallback denial. After deploying
+  owner-initiated pairing, remote smoke checks verified the removed routes, Access gate,
+  cross-origin denial and invalid-code denial. An owner-run claim loaded the dashboard;
+  replay returned 401 and the owner reported the notification email arrived. This new
+  session is awaiting owner revocation. These are observed checks, not an independent
+  audit. Access TTL, the first scheduled cleanup and frame/Firefox-68 validation remain
+  unverified.
 - Local D1 migration/test coverage and metadata unit/Worker integration tests cover
   coarse device labels, 5-minute update limits, weather-area timestamping, and excluding
   ZIPs/coordinates/raw User-Agent from stored/displayed details. Metadata feature has

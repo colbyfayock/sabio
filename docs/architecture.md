@@ -3,12 +3,13 @@
 Status: **LOCAL PREVIEW** implemented with the selected left-sidebar Horizon UI,
 live public Fahrenheit weather/timezone and browser-local slideshow configuration.
 Managed owner verification, owner-issued pairing, sessions and revocation are
-implemented and locally tested. The checked-in default stays unconfigured. A separate
-owner-approved managed deployment has real Access/D1 resources and passed earlier
-denial/redirect/pending checks, but it still serves the display-initiated approval flow.
-Owner-initiated pairing is not deployed; signed-in owner flows and hardware still need
-validation. Private integrations remain future work; this is not standing authorization
-for more cloud changes.
+implemented and locally tested. The checked-in default stays unconfigured. The
+owner-managed deployment now serves owner-initiated pairing; unauthenticated route
+checks passed and an owner-run pairing succeeded with replay denied and notification
+confirmed. Revocation of that test session remains pending. Earlier deployment checks
+covered the prior display-initiated flow. Access-token lifetime, cleanup, production
+logs and hardware remain unverified. Private integrations remain future work; this is
+not standing authorization for more cloud changes.
 
 ## Current local implementation
 
@@ -162,7 +163,7 @@ to deploy onto or operate a frame.
   cross-user shared-cache leaks. Do not log cookies, codes, auth headers, tokens,
   calendar contents or raw upstream responses.
 
-## Owner-initiated pairing flow (implemented locally, not deployed)
+## Owner-initiated pairing flow (deployed, partly verified)
 
 1. The owner authenticates on a trusted modern device and explicitly requests a
    short-lived pairing code at `/admin`. Cloudflare Access JWT verification is

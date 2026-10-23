@@ -1,11 +1,10 @@
 # Release runbook
 
-The checked-in default remains a **local preview**. An owner-managed initial
-deployment exists, but authenticated owner workflows and frame validation are pending.
-The deployed Worker still serves the earlier display-initiated approval flow; the
-source now implements owner-initiated pairing, locally tested but not deployed. This
-runbook records release gates, not permission to deploy or create resources. The
-intended first release is a single-owner Horizon dashboard with public photos,
+The checked-in default remains a **local preview**. The owner-managed Worker now runs
+owner-initiated pairing (deployed 2026-10-23); production revocation of the test session
+and frame validation are pending. This runbook records release gates, not permission to
+make further deployments or create resources. The intended first release is a
+single-owner Horizon dashboard with public photos,
 ZIP-driven Fahrenheit weather/time, and owner-issued pairings for display browsers.
 There is no calendar, task integration, private upload, or cloud-album sync.
 
@@ -20,11 +19,11 @@ No paid upgrade or unrelated Access/network rule was applied.
 
 Remote checks of the earlier flow passed: HTTPS shell/security headers, managed
 bootstrap, unapproved weather/display denial, forged cookie rejection, owner-path login
-redirects, CSRF denial, pending enrollment and private-path 404s. The browser gate was
-verified before photo/weather loading. An owner-run 2026-10-22 pass then approved a
-second browser, loaded the dashboard, resolved weather and confirmed revocation on two
-browsers. The owner-initiated flow has not been deployed or remotely verified.
-Hardware remains a gate.
+redirects, CSRF denial, pending enrollment and private-path 404s. The new deployment
+was smoke-tested for removed public endpoints, Access redirects, cross-origin claim
+denial and invalid-code denial. One owner-run pairing loaded the dashboard; replay was
+denied and the owner confirmed the notification email arrived. Revocation of that test
+session remains pending. Hardware remains a gate.
 The first release has no earlier good deployed version to roll back to; do not assume
 an untested code rollback or database recovery procedure has been proven.
 
