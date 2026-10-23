@@ -36,10 +36,12 @@ bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowli
 (the custom hostname and the `workers.dev` address); both serve the security headers
 and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
 
-Rolling display sessions and optional owner email notifications are implemented and
-tested locally but are **not deployed**. Deploying them needs its own approved scope
-and, for notifications, the email setup below. Sessions currently deployed still use
-the fixed 30-day lifetime.
+Rolling display sessions are deployed as of 2026-10-22; the Worker version is recorded
+privately. Active displays renew the seven-day idle window at most once per day and
+receive a replacement cookie. Optional owner email notifications are implemented and
+tested but **not enabled**: they need the email setup below and the private binding.
+The deployed admin UI and docs describe the rolling window; the deployed configuration
+has no `send_email` binding or `NOTIFY_FROM_EMAIL`.
 
 ## Local verification
 
