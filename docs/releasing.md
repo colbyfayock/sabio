@@ -36,6 +36,11 @@ bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowli
 (the custom hostname and the `workers.dev` address); both serve the security headers
 and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
 
+Rolling display sessions and optional owner email notifications are implemented and
+tested locally but are **not deployed**. Deploying them needs its own approved scope
+and, for notifications, the email setup below. Sessions currently deployed still use
+the fixed 30-day lifetime.
+
 ## Local verification
 
 From the local shared workspace parent:
@@ -74,7 +79,7 @@ Before making the API publicly reachable:
   and atomic one-time pairing consumption before running migrations.
 - Pair only the original pending browser using its separate high-entropy credential;
   expire codes, bound attempts and prevent replay/concurrent double consumption.
-- Use scoped Secure/HttpOnly cookies, finite lifetimes, documented renewal and CSRF
+- Use scoped Secure/HttpOnly cookies, a documented idle-timeout renewal, and CSRF
   protection. A frame session must not authorize administration or another display.
 - Check authorization on every private route, alternate host and encoded-path variant.
   Ensure static fallback and shared caches cannot expose configuration or private data.
@@ -86,6 +91,27 @@ Before making the API publicly reachable:
 
 Browser approval is not hardware attestation. The obsolete/root-accessible frame
 can expose everything displayed to it; use only non-sensitive content in this MVP.
+
+### Optional owner email notifications
+
+A notification is sent once, when a display actually claims its session. It contains
+only the UTC time, display ID, a coarse browser/OS label and the admin URL. It never
+contains IP addresses, ZIP codes, raw User-Agent strings, cookies, pairing codes or
+display content. Delivery failures are logged as a static event and never block or
+roll back session issuance.
+
+To enable it with a separately approved configuration:
+
+- Verify the owner address as an Email Routing destination in the account.
+- Onboard the sender domain for Email Service and set `NOTIFY_FROM_EMAIL` to an address
+  on that domain.
+- Add a `send_email` binding named `EMAIL` with `destination_address` set to the owner
+  address in the private production configuration only. Do not add it to the public
+  preview config.
+- Confirm current plan limits and terms. Sending to a verified destination is free on
+  Free and Paid plans; arbitrary-recipient sending requires Workers Paid. Do not upgrade
+  billing without explicit approval.
+- Without the binding or `NOTIFY_FROM_EMAIL`, the Worker silently skips notifications.
 
 ## Deployment gate — requires explicit owner scope
 

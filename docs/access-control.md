@@ -53,12 +53,21 @@ service tokens do not authenticate the owner. No owner password is stored by Sab
 4. The browser receives a distinct random 256-bit `__Host-sabio_display` cookie;
    only its hash is stored. Pending and display cookies are Secure, HttpOnly,
    SameSite=Strict, Path=/ and have no Domain attribute. Duplicate credentials deny.
-5. Sessions expire 30 days after owner approval. There is no silent renewal yet:
-   pair again after expiry. `GET /api/display` returns only this session's display
+5. A display session is a seven-day idle window, not a fixed 30-day lifetime. While an
+   approved display keeps checking in, bootstrap slides the window forward at most once
+   per day and reissues the same Secure/HttpOnly cookie with a fresh `Max-Age`, so an
+   active display does not need to pair again. Seven days without an authenticated
+   request expires the session and requires pairing. There is no absolute lifetime cap:
+   a continuously active credential can keep renewing, so revocation is the control for
+   a lost or copied credential. `GET /api/display` returns only this session's display
    ID and expiry. Unknown display subroutes cannot select another display.
 6. Owner-only session listing and `POST /api/admin/revoke { id }` revoke a browser.
    Every protected request rechecks server state. Online displays also recheck
     bootstrap once a minute and reload into the approval gate on denial.
+7. When the optional owner notification is configured, the Worker sends one email after
+   the session batch succeeds. Pending polls, replays and rejected claims send nothing.
+   The payload is limited to the event time, display ID, a coarse browser/OS label and
+   the admin URL; see [releasing](releasing.md). Delivery failure never blocks pairing.
 
 Admin metadata is descriptive only: the server parses a short browser/OS/device-type
 label from the untrusted User-Agent and saves no raw header. It is updated through

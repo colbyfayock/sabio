@@ -174,9 +174,10 @@ to deploy onto or operate a frame.
 4. Issue a scoped Secure/HttpOnly session cookie with appropriate SameSite behavior
    and CSRF protection for enrollment/admin state changes. Check validity, expiry,
    revocation and assigned display scope on every private-data request.
-5. The owner can list/revoke individual display sessions. Set finite lifetimes and
-    use the current finite 30-day lifetime; expiry requires pairing again rather than
-    silent renewal. See [access control](access-control.md) for code and release gaps.
+5. The owner can list/revoke individual display sessions. Use a seven-day idle window
+    that renews at most once per day while the display checks in; seven days offline
+    requires pairing again, and there is no absolute lifetime cap. See
+    [access control](access-control.md) for code and release gaps.
 
 This approves **a browser credential**, not a physical device. A copied credential
 can impersonate its browser, especially on a root-accessible frame. MAC addresses,

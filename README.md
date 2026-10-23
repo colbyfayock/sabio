@@ -51,9 +51,10 @@ required. The display needs internet access. Provider requests and selected data
 will be handled by Cloudflare; this is cloud hosting, not local-only processing.
 
 Administration belongs on a trusted modern device. A display shows a short-lived
-pairing code for the administrator to approve, then receives a limited, revocable
-browser session. Approval identifies a browser credential, **not cryptographic
-proof of a physical device**. Main provider credentials never belong on the frame.
+pairing code for the administrator to approve, then receives a revocable browser
+session that stays active while it keeps checking in. Approval identifies a browser
+credential, **not cryptographic proof of a physical device**. Main provider credentials
+never belong on the frame.
 
 See [architecture](docs/architecture.md), [access control](docs/access-control.md),
 and [security](SECURITY.md) for implementation boundaries and reporting guidance.

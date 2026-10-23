@@ -12,13 +12,17 @@ Managed code verifies signed Cloudflare Access application JWTs against the fixe
 configured team's certificates, checks issuer/audience/lifetime and actual owner
 email, and rejects plain identity headers. Pairing uses a separate high-entropy
 pending-browser cookie and atomic one-time consumption; display sessions are scoped,
-finite and revocable in D1. Weather requires a session in managed mode. The initial
-deployment has a real owner-only Access policy/application and D1 database. Unapproved
-denial, admin login redirects, pending enrollment, and an owner-run approval, authorized
-weather and revocation pass have been verified remotely. Access token lifetime, the
-scheduled cleanup run and production logs still need observation. No private-data
-integration is implemented. Never send personal account credentials or private
-integrations to this app. Wrangler authentication is not deployment authorization.
+revocable and use a seven-day idle renewal in the current code. The deployed build
+still uses the fixed 30-day lifetime. Weather requires a session in managed mode. The
+initial deployment has a real owner-only Access policy/application and D1 database.
+Unapproved denial, admin login redirects, pending enrollment, and an owner-run
+approval, authorized weather and revocation pass have been verified remotely. Access
+token lifetime, the scheduled cleanup run and production logs still need observation.
+An optional owner email on session issuance would contain only the event time, display
+ID, coarse browser/OS label and admin URL, never IP, ZIP, raw User-Agent, cookies or
+display content. No private-data integration is implemented. Never send personal
+account credentials or private integrations to this app. Wrangler authentication is
+not deployment authorization.
 
 The Horizon preview uses public photos and live Fahrenheit weather/timezone for a
 selected US ZIP, with no calendar or task data. Weather sends only ZIP5 in a same-origin JSON POST body; query
