@@ -22,7 +22,10 @@ treat this document as authorization for additional cloud changes.
   independently checked on managed routes. Missing/invalid config denies managed APIs.
 - Public shell, CSS and JavaScript contain no owner settings or credentials.
   `/api/bootstrap` reports whether this browser is enrolled, without returning its
-  credential. The frontend waits for bootstrap before starting photo/weather loads.
+  credential. The frontend waits for bootstrap before starting photo/weather loads and
+  keeps the dashboard shell hidden until bootstrap confirms preview or an approved
+  managed session. Shell visibility is a UI boundary, not authorization; protected
+  APIs still enforce the display session on every request.
 - Administration belongs behind a real Cloudflare Access application protecting
   `/admin` and `/api/admin/*`. Display enrollment/API paths must not require that
   modern owner login on the legacy frame. Configure these policies explicitly and
