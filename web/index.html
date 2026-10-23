@@ -11,7 +11,7 @@
     <script src="/app.js" defer></script>
   </head>
   <body>
-    <main class="page-shell frame">
+    <main class="page-shell frame" hidden>
       <aside class="rail" aria-label="Time and weather">
         <header class="rail-head"><h1 class="brand">sabio</h1><span class="folio">Horizon <span class="preview-label" id="display-mode">/ Checking access</span></span></header>
         <div class="content">
@@ -53,12 +53,12 @@
         <div class="credit" id="photo-credit">Sample photography via Unsplash</div>
       </section>
     </main>
-    <div class="dialog-shade" id="access-dialog" role="dialog" aria-modal="true" aria-labelledby="access-title" hidden>
+    <div class="dialog-shade" id="access-dialog" role="dialog" aria-modal="true" aria-labelledby="access-title">
       <section class="dialog">
         <h2 id="access-title">A place for this display.</h2>
         <p id="access-status" role="status">Checking browser approval…</p>
         <p class="pairing-code" id="access-code" role="status" aria-label="Pairing code"></p>
-        <button class="text-button" id="access-start" type="button">Request approval code</button>
+        <button class="text-button" id="access-start" type="button" hidden>Request approval code</button>
         <p>Approve from <strong>/admin</strong> on your trusted browser. This approves a browser session, not the physical hardware.</p>
       </section>
     </div>

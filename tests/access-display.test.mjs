@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { build } from 'esbuild';
 
@@ -27,6 +28,7 @@ class Element {
   fire(name, event = {}) { return this.listeners.get(name)?.(event); }
   focus() { this.focused = true; }
   setAttribute(name, value) { this.attributes[name] = value; }
+  removeAttribute(name) { delete this.attributes[name]; }
   querySelectorAll() { return this.controls ?? []; }
   contains(target) { return target === this; }
 }
@@ -128,6 +130,7 @@ test('preview bootstrap returns preview without opening the access gate', async 
 
   assert.equal(await page.initialize(), 'preview');
   assert.equal(page.element('access-dialog').hidden, true);
+  assert.equal(page.page.hidden, false);
   assert.equal(page.requests.length, 1);
   assertSameOriginRequest(page.requests[0], '/api/bootstrap', 'GET');
   assert.equal(page.requests[0].options.body, undefined);
@@ -145,6 +148,7 @@ test('enrolled managed display returns managed and reloads after periodic revoca
 
   assert.equal(await page.initialize(), 'managed');
   assert.equal(page.element('access-dialog').hidden, true);
+  assert.equal(page.page.hidden, false);
   assert.equal(page.intervals.size, 1);
   await page.runInterval(60000);
 
@@ -177,12 +181,21 @@ test('unapproved managed display shows and focuses an isolated access gate witho
 
   assert.equal(await page.initialize(), null);
   assert.equal(page.element('access-dialog').hidden, false);
+  assert.equal(page.element('access-start').hidden, false);
   assert.equal(page.element('access-start').focused, true);
+  assert.equal(page.page.hidden, true);
   assert.equal(page.page.attributes['aria-hidden'], 'true');
   assert.ok(page.controls.every((control) => control.attributes.tabindex === '-1'));
   assert.match(page.element('access-status').textContent, /needs owner approval/);
   assert.equal(page.requests.length, 1);
   assertSameOriginRequest(page.requests[0], '/api/bootstrap', 'GET');
+});
+
+test('the page shell and pairing action stay hidden until bootstrap resolves', async () => {
+  const html = await readFile('web/index.html', 'utf8');
+  assert.match(html, /<main class="page-shell frame" hidden>/);
+  assert.match(html, /id="access-start" type="button" hidden/);
+  assert.match(html, /id="access-dialog" role="dialog" aria-modal="true" aria-labelledby="access-title">/);
 });
 
 test('pairing uses same-origin credentialed POSTs, polls pending completion, then reloads', async () => {
@@ -235,8 +248,10 @@ test('bootstrap failure fails closed, offers retry, and reloads on retry or onli
 
   assert.equal(await page.initialize(), null);
   assert.equal(page.element('access-dialog').hidden, false);
+  assert.equal(page.element('access-start').hidden, false);
   assert.equal(page.element('access-start').disabled, false);
   assert.equal(page.element('access-start').textContent, 'Retry connection');
+  assert.equal(page.page.hidden, true);
   assert.match(page.element('access-status').textContent, /Cannot verify display access/);
   assert.equal(page.requests.length, 1);
 

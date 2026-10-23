@@ -9,11 +9,28 @@ export async function initializeAccess(): Promise<'preview' | 'managed' | null> 
   let bootstrapFailed = false;
   let poll: number | null = null;
   const say = (message: string): void => { if (status) status.textContent = message; };
+  if (start) start.hidden = true;
+  const reveal = (): void => {
+    if (dialog) dialog.hidden = true;
+    if (page) {
+      page.hidden = false;
+      page.removeAttribute('aria-hidden');
+    }
+  };
   const show = (): void => {
     if (dialog) dialog.hidden = false;
-    start?.focus();
-    page?.setAttribute('aria-hidden', 'true');
-    page?.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]').forEach((element) => element.setAttribute('tabindex', '-1'));
+    if (page) {
+      page.hidden = true;
+      page.setAttribute('aria-hidden', 'true');
+      page.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]').forEach((element) => element.setAttribute('tabindex', '-1'));
+    }
+    if (start) {
+      start.hidden = false;
+      start.focus();
+    } else if (dialog) {
+      dialog.setAttribute('tabindex', '-1');
+      dialog.focus();
+    }
   };
   const request = async (path: string, body?: object): Promise<Response> => {
     const controller = new AbortController();
@@ -75,9 +92,10 @@ export async function initializeAccess(): Promise<'preview' | 'managed' | null> 
     const response = await request('/api/bootstrap');
     const value: unknown = await response.json();
     if (!response.ok || !value || typeof value !== 'object' || !('mode' in value)) throw new Error('bootstrap_failed');
-    if (value.mode === 'preview') return 'preview';
+    if (value.mode === 'preview') { reveal(); return 'preview'; }
     if (value.mode !== 'managed' || !('enrolled' in value)) throw new Error('bootstrap_failed');
     if (value.enrolled === true) {
+      reveal();
       // Re-check approval periodically even if weather is offline or has not been configured.
       window.setInterval(() => {
         void request('/api/bootstrap').then(async (result) => {

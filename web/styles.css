@@ -64,6 +64,8 @@ select { min-width: 112px; min-height: 44px; padding: 0 12px; border: 1px solid 
 .dialog-actions button { margin-left: 12px; }
 .dialog .pairing-code { color: var(--ink); font-size: 30px; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
 #access-start { margin-bottom: 12px; }
+#access-dialog { background: var(--paper); }
+#access-dialog .dialog { box-shadow: none; }
 .admin-page { max-width: 780px; margin: 0 auto; padding: 40px 24px; }
 .admin-page .dialog { max-width: none; margin: 24px 0; box-shadow: none; }
 .admin-list { padding: 0; list-style: none; }
