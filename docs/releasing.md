@@ -39,9 +39,8 @@ and redirect `/admin` to Access when signed out. Treat unlisted origins as denie
 Rolling display sessions are deployed as of 2026-10-22; the Worker version is recorded
 privately. Active displays renew the seven-day idle window at most once per day and
 receive a replacement cookie. Optional owner email notifications are implemented and
-tested but **not enabled**: they need the email setup below and the private binding.
-The deployed admin UI and docs describe the rolling window; the deployed configuration
-has no `send_email` binding or `NOTIFY_FROM_EMAIL`.
+enabled in the owner deployment: the private production config has a `send_email`
+binding and `NOTIFY_FROM_EMAIL`. The public preview config has neither and stays silent.
 
 ## Local verification
 
@@ -96,17 +95,23 @@ can expose everything displayed to it; use only non-sensitive content in this MV
 
 ### Optional owner email notifications
 
-A notification is sent once, when a display actually claims its session. It contains
-only the UTC time, display ID, a coarse browser/OS label and the admin URL. It never
-contains IP addresses, ZIP codes, raw User-Agent strings, cookies, pairing codes or
-display content. Delivery failures are logged as a static event and never block or
-roll back session issuance.
+A notification is sent once, when a display actually claims its session. Its subject
+is `[Login] Sabio authentication request`, and it contains the UTC time, display ID, a
+coarse browser/OS label, an approximate network location derived from Cloudflare's
+request metadata (city/region/country only, not stored) and a dashboard link. It never
+contains IP addresses, ZIP codes, precise coordinates, raw User-Agent strings, cookies,
+pairing codes or display content. Delivery failures are logged as a static event and
+never block or roll back session issuance.
 
 To enable it with a separately approved configuration:
 
 - Verify the owner address as an Email Routing destination in the account.
-- Onboard the sender domain for Email Service and set `NOTIFY_FROM_EMAIL` to an address
-  on that domain.
+- Onboard the sender domain for Email Service. On the Workers Free plan, enabling
+  Email Routing on the sender domain and sending only to a verified destination is the
+  supported no-cost path; sending to arbitrary recipients requires Workers Paid. Do not
+  upgrade billing without explicit approval.
+- Set `NOTIFY_FROM_EMAIL` to an address on that domain. Notifications use the sender
+  display name `Sabio`.
 - Add a `send_email` binding named `EMAIL` with `destination_address` set to the owner
   address in the private production configuration only. Do not add it to the public
   preview config.

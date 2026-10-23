@@ -336,6 +336,20 @@ export interface DisplaySessionNotice {
   at: number;
   browser: string | null;
   os: string | null;
+  location: string | null;
+}
+
+/**
+ * Coarse, non-persistent location from Cloudflare's request metadata. City, region
+ * and country only; never carry IP, postal code or coordinates into the notification.
+ */
+function requestLocation(request: Request): string | null {
+  const cf = (request as Request & { cf?: { city?: unknown; region?: unknown; country?: unknown } }).cf;
+  if (!cf) return null;
+  const parts = [cf.city, cf.region, cf.country]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim().slice(0, 80));
+  return parts.length > 0 ? parts.join(', ') : null;
 }
 
 export async function handleAccessRequest(
@@ -483,7 +497,13 @@ export async function handleAccessRequest(
         if (displayId) {
           const description = describeBrowser(request.headers.get('User-Agent'));
           try {
-            await notifyDisplay({ displayId, at: now, browser: description.browser, os: description.os });
+            await notifyDisplay({
+              displayId,
+              at: now,
+              browser: description.browser,
+              os: description.os,
+              location: requestLocation(request),
+            });
           } catch {
             // A notification failure must never undo an issued session.
           }

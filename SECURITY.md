@@ -18,9 +18,10 @@ managed mode. The initial deployment has a real owner-only Access policy/applica
 and D1 database. Unapproved denial, admin login redirects, pending enrollment, and an
 owner-run approval, authorized weather and revocation pass have been verified remotely.
 Access token lifetime, the scheduled cleanup run and production logs still need
-observation. When enabled, an optional owner email on session issuance contains only
-the event time, display ID, coarse browser/OS label and admin URL, never IP, ZIP, raw
-User-Agent, cookies or display content. The deployed configuration does not enable it.
+observation. When enabled, an optional owner email on session issuance contains the
+event time, display ID, coarse browser/OS label, approximate network location
+(city/region/country only, not stored) and a dashboard link, never IP, ZIP, precise
+coordinates, raw User-Agent, cookies or display content. The owner deployment enables it.
 No private-data integration is implemented. Never send personal account credentials or
 private integrations to this app. Wrangler authentication is not deployment authorization.
 

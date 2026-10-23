@@ -1,10 +1,15 @@
 import type { DisplaySessionNotice } from './access';
 
+export interface EmailAddress {
+  email: string;
+  name?: string;
+}
+
 /** Minimal structural shape for the Cloudflare send_email binding. */
 export interface EmailBinding {
   send(message: {
     to: string;
-    from: string;
+    from: string | EmailAddress;
     subject: string;
     text: string;
   }): Promise<unknown>;
@@ -53,24 +58,33 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
 }
 
 /**
- * Plain-text body only. It intentionally excludes IP addresses, ZIP codes, raw
- * User-Agent strings, cookies, pairing codes and any display content.
+ * Plain-text body only. It includes coarse device and network-location labels, but
+ * excludes IP addresses, ZIP codes, precise coordinates, raw User-Agent strings,
+ * cookies, pairing codes and any display content.
  */
 export function notificationText(notice: DisplaySessionNotice, adminUrl: string): string {
   const browser = cleanLabel(notice.browser);
   const os = cleanLabel(notice.os);
   const device = [browser, os].filter((value): value is string => value !== null).join(' on ');
+  const location = cleanLabel(notice.location);
   const lines = [
-    'A display paired with Sabio and received a session.',
+    '[Login] Authentication Request',
+    '',
+    'A display authenticated with Sabio and received a session.',
     '',
     `Time: ${new Date(notice.at * 1000).toISOString()}`,
     `Display: ${notice.displayId}`,
   ];
-  if (device) lines.push(`Approximate device: ${device}`);
+  if (device) lines.push(`Device: ${device}`);
+  lines.push(`Approximate network location: ${location ?? 'not reported'}`);
   lines.push('');
-  lines.push(validAdminUrl(adminUrl)
-    ? `If this was unexpected, revoke the display at ${adminUrl}`
-    : 'If this was unexpected, revoke the display from the admin page.');
+  if (validAdminUrl(adminUrl)) {
+    lines.push(`Dashboard: ${adminUrl}`);
+    lines.push('');
+    lines.push('If this was unexpected, open the dashboard and revoke the display.');
+  } else {
+    lines.push('If this was unexpected, revoke the display from the admin page.');
+  }
   return `${lines.join('\n')}\n`;
 }
 
@@ -86,8 +100,8 @@ export async function notifyNewDisplay(
   try {
     await withTimeout(config.email.send({
       to: config.ownerEmail,
-      from: config.fromEmail,
-      subject: 'Sabio: new display paired',
+      from: { email: config.fromEmail, name: 'Sabio' },
+      subject: '[Login] Sabio authentication request',
       text: notificationText(notice, config.adminUrl),
     }), SEND_TIMEOUT_MS);
     return true;

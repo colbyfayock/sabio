@@ -9,11 +9,15 @@ const { default: worker } = await import(`data:text/javascript;base64,${Buffer.f
 const origin = 'https://example.com';
 const secondaryOrigin = 'https://alternate.example.com';
 const vars = { APP_MODE: 'managed', APP_ORIGIN: origin, APP_ALLOWED_ORIGINS: `${origin},${secondaryOrigin}`, ACCESS_TEAM_DOMAIN: 'https://sample-team.cloudflareaccess.com', ACCESS_AUDIENCE: 'a'.repeat(64), OWNER_EMAIL: 'owner@example.com', NOTIFY_FROM_EMAIL: 'notify@example.com' };
-const request = (path, body, headers = {}, base = origin) => new Request(base + path, {
-  method: body === undefined ? 'GET' : 'POST',
-  headers: { Origin: base, 'Content-Type': 'application/json', 'CF-Connecting-IP': '127.0.0.1', ...headers },
-  body: body === undefined ? undefined : JSON.stringify(body),
-});
+const request = (path, body, headers = {}, base = origin, cf) => {
+  const req = new Request(base + path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { Origin: base, 'Content-Type': 'application/json', 'CF-Connecting-IP': '127.0.0.1', ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (cf) Object.defineProperty(req, 'cf', { value: cf });
+  return req;
+};
 
 test('public preview cannot activate weather remotely, and invalid managed config fails closed', async () => {
   const env = { ASSETS: { fetch() { assert.fail('No asset fallback'); } } };
@@ -82,14 +86,16 @@ test('managed routing integrates real signed owner verification, original-browse
   const { code } = await enrollment.json();
   const pending = enrollment.headers.getSetCookie()[0].split(';')[0];
   assert.equal((await worker.fetch(request('/api/admin/approve', { code }, ownerHeaders), env)).status, 200);
-  const completed = await worker.fetch(request('/api/enrollment/complete', {}, { Cookie: pending }), env);
+  const completed = await worker.fetch(request('/api/enrollment/complete', {}, { Cookie: pending }, origin, { city: 'Portland', region: 'Oregon', country: 'US' }), env);
   assert.equal(completed.status, 200);
   assert.equal(completed.headers.getSetCookie().length, 2);
   assert.equal(emails.length, 1);
   assert.equal(emails[0].to, vars.OWNER_EMAIL);
-  assert.equal(emails[0].from, vars.NOTIFY_FROM_EMAIL);
-  assert.equal(emails[0].subject, 'Sabio: new display paired');
+  assert.deepEqual(emails[0].from, { email: vars.NOTIFY_FROM_EMAIL, name: 'Sabio' });
+  assert.equal(emails[0].subject, '[Login] Sabio authentication request');
   assert.match(emails[0].text, /Display: [0-9a-f-]{36}/);
+  assert.match(emails[0].text, /Approximate network location: Portland, Oregon, US/);
+  assert.match(emails[0].text, /Dashboard: https:\/\/example\.com\/admin/);
   assert.equal(emails[0].text.includes('127.0.0.1'), false);
   const sessionCookie = completed.headers.getSetCookie().find((cookie) => cookie.startsWith('__Host-sabio_display=')).split(';')[0];
   const displayHeaders = {
