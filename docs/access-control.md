@@ -67,8 +67,8 @@ service tokens do not authenticate the owner. No owner password is stored by Sab
 7. When the optional owner notification is configured, the Worker sends one email after
    the session batch succeeds. Pending polls, replays and rejected claims send nothing.
    The payload is limited to the event time, display ID, a coarse browser/OS label,
-   approximate network location (city/region/country only, not stored) and the dashboard
-   URL; see [releasing](releasing.md). Delivery failure never blocks pairing.
+   approximate network location (city/region/country only, not persisted by Sabio) and
+   the dashboard URL; see [releasing](releasing.md). Delivery failure never blocks pairing.
 
 Admin metadata is descriptive only: the server parses a short browser/OS/device-type
 label from the untrusted User-Agent and saves no raw header. It is updated through

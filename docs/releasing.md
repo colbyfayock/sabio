@@ -98,10 +98,10 @@ can expose everything displayed to it; use only non-sensitive content in this MV
 A notification is sent once, when a display actually claims its session. Its subject
 is `[Login] Sabio authentication request`, and it contains the UTC time, display ID, a
 coarse browser/OS label, an approximate network location derived from Cloudflare's
-request metadata (city/region/country only, not stored) and a dashboard link. It never
-contains IP addresses, ZIP codes, precise coordinates, raw User-Agent strings, cookies,
-pairing codes or display content. Delivery failures are logged as a static event and
-never block or roll back session issuance.
+request metadata (city/region/country only, not persisted by Sabio) and a dashboard
+link. It never contains IP addresses, ZIP codes, precise coordinates, raw User-Agent
+strings, cookies, pairing codes or display content. Delivery failures are logged as a
+static event and never block or roll back session issuance.
 
 To enable it with a separately approved configuration:
 
