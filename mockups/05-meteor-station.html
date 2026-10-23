@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Meteor Station — Sabio mockup 05</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ground: #102b28;
+      --panel: #183a34;
+      --panel-light: #20473f;
+      --ink: #f0e8cf;
+      --muted: #a9b8a1;
+      --brass: #c5a96a;
+      --rule: rgba(197, 169, 106, .48);
+      --mono: "Courier New", Courier, monospace;
+      --sans: "Trebuchet MS", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      overflow: hidden;
+      background: var(--ground);
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+    button, input { font: inherit; }
+    button { min-width: 44px; color: inherit; }
+    button:focus, input:focus, a:focus { outline: 3px solid #f0c979; outline-offset: 3px; }
+    button:focus-visible, input:focus-visible, a:focus-visible {
+      outline: 3px solid #f0c979;
+      outline-offset: 3px;
+    }
+    [hidden] { display: none !important; }
+    .console {
+      height: 100vh;
+      padding: 17px;
+      display: grid;
+      grid-template-rows: 42fr 58fr;
+      gap: 12px;
+      background:
+        repeating-linear-gradient(0deg, rgba(236, 226, 192, .018) 0, rgba(236, 226, 192, .018) 1px, transparent 1px, transparent 5px),
+        radial-gradient(ellipse at 49% 0%, #285047 0%, var(--ground) 72%);
+    }
+    .instrument {
+      min-height: 0;
+      padding: 21px 26px 17px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      border: 1px solid var(--rule);
+      background: linear-gradient(135deg, rgba(32, 71, 63, .98), rgba(20, 52, 47, .98));
+      box-shadow: inset 0 0 0 4px rgba(197, 169, 106, .06), 0 8px 20px rgba(0, 0, 0, .16);
+    }
+    .instrument-head, .eyebrow, .control-rail, .weather-head, .photo-caption {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .instrument-head, .eyebrow, .weather-head, .photo-caption, .zip-button, .source-button, .transport button {
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+    .instrument-head { color: var(--muted); font-size: 11px; }
+    .station-name { color: var(--brass); }
+    .live-mark { display: inline-flex; align-items: center; gap: 9px; }
+    .live-mark:before {
+      width: 7px; height: 7px; border-radius: 50%; content: "";
+      background: var(--brass); box-shadow: 0 0 0 3px rgba(197, 169, 106, .13);
+    }
+    .readings {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      align-items: center;
+      gap: 34px;
+    }
+    .time-block { min-width: 0; }
+    .eyebrow { margin: 0 0 8px; color: var(--muted); font-size: 10px; }
+    .clock-line { display: flex; align-items: flex-start; white-space: nowrap; }
+    .clock {
+      font: 400 100px/.92 var(--mono);
+      letter-spacing: -.105em;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+    }
+    .seconds {
+      margin: 7px 0 0 13px;
+      color: var(--brass);
+      font: 400 19px/1 var(--mono);
+      letter-spacing: .03em;
+    }
+    .date-line { margin: 11px 0 0 3px; color: #d1d6bd; font: 14px/1.4 var(--mono); letter-spacing: .045em; }
+    .weather-block {
+      min-width: 0;
+      padding: 12px 0 12px 28px;
+      border-left: 1px solid var(--rule);
+    }
+    .weather-head { color: var(--brass); font-size: 10px; }
+    .weather-reading { display: flex; align-items: center; gap: 16px; margin-top: 9px; }
+    .weather-sigil {
+      position: relative; flex: 0 0 31px; width: 31px; height: 31px;
+      border: 1px solid var(--brass); border-radius: 50%;
+    }
+    .weather-sigil:after {
+      position: absolute; top: 8px; left: 8px; width: 13px; height: 13px;
+      border: 1px solid var(--brass); border-radius: 50%; content: ""; background: var(--panel-light);
+    }
+    .temperature { font: 400 54px/.95 var(--mono); letter-spacing: -.09em; font-variant-numeric: tabular-nums; }
+    .temperature sup { position: relative; top: -17px; padding-left: 3px; font-size: 21px; letter-spacing: 0; }
+    .condition { margin: 7px 0 0 2px; color: #d1d6bd; font: 14px/1.25 var(--mono); }
+    .high-low { margin: 12px 0 0 2px; color: var(--muted); font: 12px/1.3 var(--mono); letter-spacing: .055em; }
+    .high-low strong { color: var(--ink); font-weight: 400; }
+    .control-rail { min-height: 48px; padding-top: 12px; border-top: 1px solid var(--rule); gap: 12px; }
+    .control-group { display: flex; align-items: center; gap: 8px; }
+    .control-rail button {
+      min-height: 44px;
+      padding: 0 14px;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      background: linear-gradient(#295047, #1a3d36);
+      box-shadow: inset 0 1px rgba(255,255,255,.07), 0 2px 0 rgba(0,0,0,.16);
+      font-size: 10px;
+      letter-spacing: .075em;
+      cursor: pointer;
+    }
+    .control-rail button:hover { background: #31594e; }
+    .zip-button { color: var(--ink); }
+    .zip-button .zip-label { color: var(--brass); }
+    .source-button { color: var(--muted); }
+    .transport button { min-width: 74px; }
+    .photo-bay {
+      min-height: 0;
+      padding: 8px 10px 0;
+      display: grid;
+      grid-template-rows: 1fr 25px;
+      border: 1px solid var(--rule);
+      background: #17332e;
+      box-shadow: inset 0 0 0 4px rgba(197, 169, 106, .055), 0 8px 20px rgba(0, 0, 0, .16);
+    }
+    .photo-frame {
+      position: relative;
+      min-height: 0;
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid rgba(197, 169, 106, .72);
+      background: #28423a;
+      box-shadow: inset 0 0 0 5px rgba(16, 43, 40, .3);
+    }
+    .photo-frame:before, .photo-frame:after {
+      position: absolute; z-index: 2; width: 13px; height: 13px; content: ""; pointer-events: none;
+      border-color: var(--brass); border-style: solid;
+    }
+    .photo-frame:before { top: 5px; left: 5px; border-width: 1px 0 0 1px; }
+    .photo-frame:after { right: 5px; bottom: 5px; border-width: 0 1px 1px 0; }
+    .photo-image {
+      display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 54%;
+      opacity: 1; transition: opacity 1.2s ease;
+    }
+    .photo-image.is-changing { opacity: 0; }
+    .photo-fallback {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      padding: 24px; color: var(--ink); text-align: center; font: 14px/1.6 var(--mono);
+      letter-spacing: .06em; background: #28423a;
+    }
+    .photo-caption { min-width: 0; color: var(--muted); font-size: 9px; }
+    .photo-caption span { white-space: nowrap; }
+    .photo-caption a { color: var(--brass); text-decoration: none; }
+    .photo-caption a:hover { text-decoration: underline; }
+    .file-picker, .visually-hidden {
+      position: absolute !important; width: 1px !important; height: 1px !important;
+      padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+    }
+    .dialog-shade {
+      position: fixed; z-index: 10; inset: 0; display: flex; align-items: center; justify-content: center;
+      padding: 20px; background: rgba(5, 18, 16, .78);
+    }
+    .zip-dialog {
+      width: 100%; max-width: 440px; padding: 24px;
+      border: 1px solid var(--brass); background: #193b35;
+      box-shadow: 0 15px 50px rgba(0,0,0,.4), inset 0 0 0 4px rgba(197,169,106,.06);
+    }
+    .zip-dialog h2 { margin: 0 0 8px; color: var(--ink); font: 400 20px/1.2 var(--mono); letter-spacing: .045em; }
+    .zip-dialog p { margin: 0 0 17px; color: var(--muted); font: 13px/1.55 var(--mono); }
+    .zip-dialog label { display: block; margin-bottom: 7px; color: var(--brass); font: 11px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    .zip-dialog input {
+      width: 100%; min-height: 48px; padding: 0 12px; border: 1px solid var(--rule);
+      border-radius: 0; color: var(--ink); background: #102b28; font: 19px var(--mono); letter-spacing: .08em;
+    }
+    .zip-error { min-height: 21px; margin: 7px 0 0 !important; color: #f0bd79 !important; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 10px; }
+    .dialog-actions button {
+      min-width: 92px; min-height: 44px; padding: 0 14px; border: 1px solid var(--rule);
+      border-radius: 0; background: #20473f; font: 11px var(--mono); letter-spacing: .08em;
+      text-transform: uppercase; cursor: pointer;
+    }
+    .dialog-actions .save-button { color: #102b28; border-color: var(--brass); background: var(--brass); }
+    .dialog-actions button:hover { filter: brightness(1.12); }
+    @media (max-width: 700px) {
+      .console { padding: 10px; grid-template-rows: 42fr 58fr; gap: 8px; }
+      .instrument { padding: 14px 15px 12px; }
+      .instrument-head { font-size: 9px; }
+      .readings { grid-template-columns: 1.12fr .88fr; gap: 12px; }
+      .clock { font-size: 68px; }
+      .seconds { margin: 5px 0 0 8px; font-size: 14px; }
+      .date-line { margin-top: 8px; font-size: 11px; }
+      .eyebrow { margin-bottom: 6px; font-size: 8px; }
+      .weather-block { padding-left: 13px; }
+      .weather-head { font-size: 8px; }
+      .weather-reading { gap: 8px; margin-top: 8px; }
+      .weather-sigil { flex-basis: 23px; width: 23px; height: 23px; }
+      .weather-sigil:after { top: 6px; left: 6px; width: 9px; height: 9px; }
+      .temperature { font-size: 39px; }
+      .temperature sup { top: -12px; font-size: 15px; }
+      .condition { margin-top: 5px; font-size: 11px; }
+      .high-low { margin-top: 8px; font-size: 10px; }
+      .control-rail { gap: 5px; }
+      .control-group { gap: 5px; }
+      .control-rail button { min-height: 44px; padding: 0 9px; font-size: 9px; letter-spacing: .025em; }
+      .transport button { min-width: 57px; }
+      .photo-bay { padding: 6px 6px 0; grid-template-rows: 1fr 23px; }
+      .photo-caption { font-size: 8px; letter-spacing: .06em; }
+    }
+    @media (max-width: 360px) {
+      .console { padding: 7px; gap: 6px; }
+      .instrument { padding-right: 10px; padding-left: 10px; }
+      .clock { font-size: 59px; }
+      .weather-block { padding-left: 9px; }
+      .temperature { font-size: 34px; }
+      .control-rail button { padding: 0 6px; font-size: 8px; }
+      .transport button { min-width: 50px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .photo-image { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="console" aria-label="Meteor Station weather and photo display">
+    <section class="instrument" aria-label="Local time and sample weather">
+      <header class="instrument-head">
+        <span class="station-name">Meteor Station <span aria-hidden="true">/</span> No. 05</span>
+        <span class="live-mark">Local instrument</span>
+      </header>
+      <div class="readings">
+        <section class="time-block" aria-label="Local time">
+          <p class="eyebrow">Local time <span aria-hidden="true">—</span> 24 hour</p>
+          <div class="clock-line">
+            <time class="clock" id="clock" aria-live="off">00:00</time>
+            <span class="seconds" id="seconds" aria-hidden="true">00</span>
+          </div>
+          <p class="date-line" id="date">Loading date</p>
+        </section>
+        <section class="weather-block" aria-label="Sample weather">
+          <div class="weather-head"><span>Sample forecast</span><span>°F</span></div>
+          <div class="weather-reading">
+            <span class="weather-sigil" aria-hidden="true"></span>
+            <div class="temperature">68<sup>°</sup></div>
+          </div>
+          <p class="condition">Partly cloudy</p>
+          <p class="high-low">HIGH <strong>72°</strong> <span aria-hidden="true">/</span> LOW <strong>54°</strong></p>
+        </section>
+      </div>
+      <nav class="control-rail" aria-label="Station controls">
+        <div class="control-group">
+          <button class="zip-button" id="openZip" type="button">ZIP <span class="zip-label" id="zipLabel">00000</span></button>
+          <button class="source-button" id="choosePhotos" type="button">Photo source</button>
+          <input class="file-picker" id="photoFiles" type="file" accept="image/*" multiple aria-label="Choose up to six photos from this device">
+        </div>
+        <div class="control-group transport">
+          <button id="pause" type="button" aria-pressed="false">Pause</button>
+          <button id="next" type="button">Next</button>
+        </div>
+      </nav>
+    </section>
+
+    <section class="photo-bay" aria-label="Panoramic photo">
+      <figure class="photo-frame">
+        <img class="photo-image" id="photo" alt="Coastal water beneath a cloudy sky">
+        <div class="photo-fallback" id="photoFallback" role="status" hidden>Photo unavailable.<br>Choose a local image or try the next sample.</div>
+      </figure>
+      <div class="photo-caption">
+        <span id="photoStatus" aria-live="polite">BUILT-IN LANDSCAPES</span>
+        <a href="https://unsplash.com/" rel="noreferrer">Photo: Unsplash</a>
+      </div>
+    </section>
+  </main>
+
+  <div class="dialog-shade" id="zipShade" hidden>
+    <section class="zip-dialog" id="zipDialog" role="dialog" aria-modal="true" aria-labelledby="zipTitle" aria-describedby="zipHelp">
+      <h2 id="zipTitle">Station location</h2>
+      <p id="zipHelp">Enter a ZIP code to update this label. Sample weather and local time are not connected; live weather and timezone wiring come later.</p>
+      <form id="zipForm" novalidate>
+        <label for="zipInput">US ZIP code</label>
+        <input id="zipInput" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="10" pattern="[0-9]{5}(-[0-9]{4})?" placeholder="00000 or 00000-0000" aria-describedby="zipHelp zipError">
+        <p class="zip-error" id="zipError" role="alert" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button id="cancelZip" type="button">Cancel</button>
+          <button class="save-button" type="submit">Save label</button>
+        </div>
+      </form>
+    </section>
+  </div>
+  <p class="visually-hidden" id="sourceAnnouncement" aria-live="polite"></p>
+
+  <script>
+    (function () {
+      "use strict";
+      var clock = document.getElementById("clock");
+      var seconds = document.getElementById("seconds");
+      var date = document.getElementById("date");
+      var zipShade = document.getElementById("zipShade");
+      var zipInput = document.getElementById("zipInput");
+      var zipError = document.getElementById("zipError");
+      var zipLabel = document.getElementById("zipLabel");
+      var zipForm = document.getElementById("zipForm");
+      var zipOpener = document.getElementById("openZip");
+      var photo = document.getElementById("photo");
+      var photoFallback = document.getElementById("photoFallback");
+      var photoStatus = document.getElementById("photoStatus");
+      var sourceAnnouncement = document.getElementById("sourceAnnouncement");
+      var fileInput = document.getElementById("photoFiles");
+      var pauseButton = document.getElementById("pause");
+      var reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var samples = [
+        { src: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=75&fm=jpg", alt: "Mountain lake beneath a cloudy sky" },
+        { src: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=75&fm=jpg", alt: "Ocean waves viewed from the shore" },
+        { src: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=75&fm=jpg", alt: "Mountain peaks beneath a bright sky" }
+      ];
+      var slides = samples;
+      var slideIndex = 1;
+      var interval = null;
+      var fadeTimer = null;
+      var lastFocus = null;
+      var isPaused = false;
+      var localUrls = [];
+
+      function pad(value) { return value < 10 ? "0" + value : String(value); }
+      function updateClock() {
+        var now = new Date();
+        clock.textContent = pad(now.getHours()) + ":" + pad(now.getMinutes());
+        seconds.textContent = pad(now.getSeconds());
+        date.textContent = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+      }
+      function renderSlide() {
+        var current = slides[slideIndex];
+        photoFallback.hidden = true;
+        photo.hidden = false;
+        photo.alt = current.alt;
+        photo.src = current.src;
+      }
+      function advanceSlide() {
+        if (fadeTimer) { window.clearTimeout(fadeTimer); fadeTimer = null; }
+        if (reducedMotion) {
+          slideIndex = (slideIndex + 1) % slides.length;
+          renderSlide();
+          return;
+        }
+        photo.classList.add("is-changing");
+        fadeTimer = window.setTimeout(function () {
+          slideIndex = (slideIndex + 1) % slides.length;
+          renderSlide();
+          photo.classList.remove("is-changing");
+          fadeTimer = null;
+        }, 1200);
+      }
+      function startSlideshow() {
+        if (interval) { window.clearInterval(interval); }
+        interval = window.setInterval(advanceSlide, 20000);
+      }
+      function setSourceLabel(text) {
+        photoStatus.textContent = text;
+        sourceAnnouncement.textContent = text;
+      }
+      function openDialog() {
+        lastFocus = document.activeElement;
+        zipInput.value = zipLabel.textContent;
+        zipError.textContent = "";
+        zipShade.hidden = false;
+        zipInput.focus();
+      }
+      function closeDialog() {
+        zipShade.hidden = true;
+        zipError.textContent = "";
+        if (lastFocus && lastFocus.focus) { lastFocus.focus(); }
+      }
+
+      updateClock();
+      window.setInterval(updateClock, 1000);
+      renderSlide();
+      startSlideshow();
+      photo.addEventListener("error", function () {
+        photo.hidden = true;
+        photoFallback.hidden = false;
+      });
+      document.getElementById("next").addEventListener("click", advanceSlide);
+      pauseButton.addEventListener("click", function () {
+        isPaused = !isPaused;
+        pauseButton.setAttribute("aria-pressed", isPaused ? "true" : "false");
+        pauseButton.textContent = isPaused ? "Resume" : "Pause";
+        if (isPaused) {
+          if (interval) { window.clearInterval(interval); interval = null; }
+          if (fadeTimer) {
+            window.clearTimeout(fadeTimer);
+            fadeTimer = null;
+            photo.classList.remove("is-changing");
+          }
+        } else { startSlideshow(); }
+      });
+      zipOpener.addEventListener("click", openDialog);
+      document.getElementById("cancelZip").addEventListener("click", closeDialog);
+      zipShade.addEventListener("click", function (event) {
+        if (event.target === zipShade) { closeDialog(); }
+      });
+      zipForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var value = zipInput.value.replace(/^\s+|\s+$/g, "");
+        if (!/^\d{5}(?:-\d{4})?$/.test(value)) {
+          zipError.textContent = "Use five digits or ZIP+4 (for example, 00000 or 00000-0000).";
+          zipInput.focus();
+          return;
+        }
+        zipLabel.textContent = value;
+        closeDialog();
+      });
+      zipShade.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeDialog();
+        } else if (event.key === "Tab") {
+          var focusable = zipShade.querySelectorAll("input, button");
+          var first = focusable[0];
+          var last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault(); last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+          }
+        }
+      });
+      document.getElementById("choosePhotos").addEventListener("click", function () {
+        fileInput.click();
+      });
+      fileInput.addEventListener("change", function () {
+        var files = fileInput.files;
+        var chosen = [];
+        var i;
+        if (!files || !files.length) { return; }
+        for (i = 0; i < files.length && chosen.length < 6; i += 1) {
+          if (files[i].type && files[i].type.indexOf("image/") === 0) { chosen.push(files[i]); }
+        }
+        if (!chosen.length) {
+          setSourceLabel("NO SUPPORTED IMAGES · UNCHANGED");
+          fileInput.value = "";
+          return;
+        }
+        for (i = 0; i < localUrls.length; i += 1) { URL.revokeObjectURL(localUrls[i]); }
+        localUrls = [];
+        slides = [];
+        for (i = 0; i < chosen.length; i += 1) {
+          var url = URL.createObjectURL(chosen[i]);
+          localUrls.push(url);
+          slides.push({ src: url, alt: "Selected local photograph" });
+        }
+        slideIndex = 0;
+        if (fadeTimer) { window.clearTimeout(fadeTimer); fadeTimer = null; }
+        photo.classList.remove("is-changing");
+        renderSlide();
+        setSourceLabel("" + chosen.length + " LOCAL IMAGE" + (chosen.length === 1 ? "" : "S") + " · BROWSER ONLY");
+        fileInput.value = "";
+      });
+      window.addEventListener("pagehide", function () {
+        var i;
+        for (i = 0; i < localUrls.length; i += 1) { URL.revokeObjectURL(localUrls[i]); }
+      });
+    }());
+  </script>
+</body>
+</html>

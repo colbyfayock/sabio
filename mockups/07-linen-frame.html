@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Linen Frame — Sabio display study</title>
+  <style>
+    :root { color-scheme: light; --paper: #eee9dc; --ink: #302e25; --muted: #777365; --olive: #60634d; --brass: #a77b45; --rule: #d2cbbb; --mat: #e3dece; --shadow: rgba(46, 40, 29, .16); }
+    :root[data-theme="dark"] { color-scheme: dark; --paper: #302b25; --ink: #eee7d9; --muted: #b2a99a; --olive: #c1b79e; --brass: #c6a46c; --rule: #51483c; --mat: #25221e; --shadow: rgba(0, 0, 0, .38); }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body { min-width: 280px; background: var(--paper); color: var(--ink); font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif; transition: background-color .35s ease, color .35s ease; }
+    button, input, select { font: inherit; }
+    button, select { color: inherit; }
+    button { min-width: 44px; cursor: pointer; }
+    button:focus, input:focus, select:focus { outline: 2px solid var(--brass); outline-offset: 3px; }
+    .frame { display: grid; grid-template-columns: 42% 58%; width: 100%; height: 100vh; min-height: 620px; overflow: hidden; }
+    .details { display: flex; min-width: 0; flex-direction: column; padding: 43px 42px 31px 56px; }
+    .masthead, .eyebrow, .date, .weather-label, .sample, .zip-row, .footnote, .photo-controls, .credit, .appearance { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    .masthead { display: flex; align-items: center; gap: 11px; color: var(--olive); font: 600 10px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: .2em; text-transform: uppercase; }
+    .masthead:before { width: 24px; height: 1px; background: var(--brass); content: ""; }
+    .folio { margin-left: auto; color: var(--muted); font-size: 9px; letter-spacing: .12em; }
+    .clock-block { margin-top: auto; margin-bottom: 30px; }
+    .eyebrow, .weather-label { color: var(--olive); font-size: 10px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+    .time { display: flex; align-items: baseline; gap: 12px; margin: 9px 0 4px -5px; white-space: nowrap; }
+    #clock { font-size: 108px; font-weight: 400; letter-spacing: -.075em; line-height: .98; font-variant-numeric: lining-nums; }
+    #meridiem { color: var(--brass); font-size: 16px; letter-spacing: .11em; }
+    .date { color: var(--muted); font-size: 12px; letter-spacing: .06em; }
+    .weather { border-top: 1px solid var(--rule); padding-top: 18px; }
+    .weather-top { display: flex; align-items: center; justify-content: space-between; }
+    .sample { color: var(--brass); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+    .reading { display: flex; align-items: baseline; gap: 13px; margin-top: 9px; }
+    .temperature { font-size: 42px; letter-spacing: -.055em; line-height: 1; }
+    .condition { color: var(--olive); font-size: 13px; }
+    .high-low { margin-left: auto; color: var(--muted); font: 10px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: .04em; white-space: nowrap; }
+    .zip-row { display: flex; align-items: center; justify-content: space-between; min-height: 48px; margin-top: 15px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 10px; letter-spacing: .06em; }
+    .zip-row strong { color: var(--ink); font-weight: 500; }
+    .text-button { min-height: 44px; padding: 0 2px; border: 0; border-bottom: 1px solid var(--olive); background: transparent; color: var(--olive); font: 600 9px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: .11em; text-transform: uppercase; }
+    .text-button:hover { color: var(--brass); }
+    .footnote { margin: 18px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; letter-spacing: .035em; }
+    .appearance { display: flex; align-items: center; gap: 10px; margin-top: 17px; color: var(--muted); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+    .appearance select { min-height: 44px; min-width: 104px; padding: 0 9px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink); font-size: 11px; letter-spacing: .04em; text-transform: none; }
+    .gallery { position: relative; display: flex; min-width: 0; min-height: 0; align-items: stretch; padding: 27px 30px 27px 0; background: var(--mat); transition: background-color .35s ease; }
+    .mat { position: relative; width: 100%; min-width: 0; min-height: 0; padding: 11px; border: 1px solid rgba(100, 91, 72, .27); background: var(--paper); box-shadow: 0 13px 36px var(--shadow); }
+    .photo { position: absolute; inset: 11px; width: calc(100% - 22px); height: calc(100% - 22px); background: #b6b3a7; object-fit: cover; opacity: 0; transition: opacity 1.2s ease; }
+    .photo.active { opacity: 1; }
+    .photo-error { position: absolute; z-index: 2; inset: 11px; display: flex; align-items: center; justify-content: center; padding: 28px; background: var(--mat); color: var(--muted); font: 12px/1.6 "Helvetica Neue", Helvetica, Arial, sans-serif; text-align: center; }
+    .gallery-foot { position: absolute; z-index: 3; right: 28px; bottom: 25px; left: 28px; display: flex; align-items: center; justify-content: space-between; gap: 15px; color: #fffdf3; text-shadow: 0 1px 7px rgba(0,0,0,.6); }
+    .credit { font-size: 9px; letter-spacing: .04em; }
+    .credit a { color: inherit; text-underline-offset: 3px; }
+    .photo-controls { display: flex; align-items: center; gap: 14px; }
+    .photo-controls .text-button { color: #fffdf3; border-color: rgba(255,253,243,.72); text-shadow: inherit; }
+    .photo-controls .text-button:hover { color: #e5c58b; }
+    .file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; clip-path: inset(50%); }
+    .dialog-shade { position: fixed; z-index: 5; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(30, 28, 23, .62); }
+    .zip-dialog { width: 100%; max-width: 410px; padding: 29px 31px 26px; border: 1px solid var(--rule); background: var(--paper); box-shadow: 0 18px 55px rgba(0,0,0,.25); }
+    .zip-dialog h2 { margin: 7px 0 9px; font-size: 27px; font-weight: 400; }
+    .zip-dialog p { margin: 0 0 18px; color: var(--muted); font: 12px/1.55 "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    .zip-dialog label { display: block; margin-bottom: 7px; color: var(--olive); font: 600 9px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: .13em; text-transform: uppercase; }
+    .zip-dialog input { width: 100%; height: 48px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 0; background: var(--mat); color: var(--ink); font: 17px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: .08em; }
+    .zip-error { min-height: 20px; margin-top: 7px; color: #9b4c35; font: 11px "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    :root[data-theme="dark"] .zip-error { color: #efbc9f; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 22px; margin-top: 12px; }
+    @media (max-width: 900px) {
+      .details { padding-right: 27px; padding-left: 34px; }
+      #clock { font-size: 88px; }
+      .gallery { padding-top: 22px; padding-bottom: 22px; }
+      .gallery-foot { right: 20px; bottom: 20px; left: 20px; }
+      .photo-controls { gap: 9px; }
+    }
+    @media (max-width: 650px) {
+      html, body { height: auto; min-height: 100%; }
+      .frame { display: flex; height: auto; min-height: 100vh; flex-direction: column; overflow: visible; }
+      .details { min-height: 465px; padding: 25px 25px 20px; }
+      .clock-block { margin-top: 49px; margin-bottom: 22px; }
+      #clock { font-size: 82px; }
+      .gallery { height: 56vh; min-height: 340px; padding: 14px 17px; }
+      .mat { padding: 7px; }
+      .photo, .photo-error { inset: 7px; width: calc(100% - 14px); height: calc(100% - 14px); }
+      .gallery-foot { right: 16px; bottom: 14px; left: 16px; flex-wrap: wrap; }
+      .photo-controls { width: 100%; justify-content: space-between; }
+      .credit { margin-left: auto; font-size: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *:before, *:after { transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="frame" id="pageContent">
+    <section class="details" aria-label="Local time and sample weather">
+      <header class="masthead">Linen frame <span class="folio">Sabio / 07</span></header>
+      <section class="clock-block" aria-label="Browser local time">
+        <div class="eyebrow" id="dayHint">Day · local time</div>
+        <div class="time"><time id="clock" aria-label="Local time">--:--</time><span id="meridiem"></span></div>
+        <div class="date" id="dateLine"></div>
+      </section>
+      <section class="weather" aria-label="Sample weather, not live">
+        <div class="weather-top"><span class="weather-label">Weather</span><span class="sample">Sample · not live</span></div>
+        <div class="reading"><span class="temperature">72°F</span><span class="condition">Clear</span><span class="high-low">H 76°F &nbsp; L 58°F</span></div>
+        <div class="zip-row"><span id="zipLabel"><strong>ZIP</strong> · 00000</span><button class="text-button" id="zipOpen" type="button">Edit ZIP</button></div>
+      </section>
+      <p class="footnote">Time follows this browser. ZIP-based timezone and weather wiring are future work.</p>
+      <label class="appearance" for="themeMode">Appearance
+        <select id="themeMode" aria-label="Appearance mode">
+          <option value="auto">Auto</option><option value="light">Day linen</option><option value="dark">Evening</option>
+        </select>
+      </label>
+    </section>
+    <section class="gallery" aria-label="Photograph display">
+      <div class="mat">
+        <img class="photo" id="photoA" alt="Mountain lake beneath a broad sky" referrerpolicy="no-referrer">
+        <img class="photo" id="photoB" alt="" aria-hidden="true" referrerpolicy="no-referrer">
+        <div class="photo-error" id="photoError" role="status" hidden>This photograph could not be displayed. Choose another photo or select a new source.</div>
+      </div>
+      <div class="gallery-foot">
+        <span class="credit">Photographs via <a href="https://unsplash.com/" target="_blank" rel="noopener noreferrer">Unsplash</a></span>
+        <nav class="photo-controls" aria-label="Photo controls">
+          <button class="text-button" id="choosePhotos" type="button" aria-controls="photoFiles">Source</button>
+          <input class="file-input" id="photoFiles" type="file" accept="image/*" multiple tabindex="-1" aria-label="Choose up to six photos from this device">
+          <button class="text-button" id="pausePhotos" type="button" aria-pressed="false">Pause</button>
+          <button class="text-button" id="nextPhoto" type="button">Next</button>
+        </nav>
+      </div>
+    </section>
+  </main>
+  <div class="dialog-shade" id="zipDialog" hidden>
+    <section class="zip-dialog" role="dialog" aria-modal="true" aria-labelledby="zipTitle" aria-describedby="zipDescription">
+      <div class="eyebrow">Display setting</div>
+      <h2 id="zipTitle">Set a ZIP code</h2>
+      <p id="zipDescription">This is a label-only prototype. Sample weather stays unchanged; no location, weather, or timezone request is made, and nothing is saved.</p>
+      <form id="zipForm" novalidate>
+        <label for="zipInput">US ZIP or ZIP+4</label>
+        <input id="zipInput" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="10" placeholder="00000 or 00000-0000" aria-describedby="zipError">
+        <div class="zip-error" id="zipError" role="status" aria-live="polite"></div>
+        <div class="dialog-actions"><button class="text-button" id="zipCancel" type="button">Cancel</button><button class="text-button" type="submit">Save label</button></div>
+      </form>
+    </section>
+  </div>
+  <script>
+    (function () {
+      "use strict";
+      var samples = [
+        "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=75&fm=jpg",
+        "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=75&fm=jpg",
+        "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=75&fm=jpg"
+      ];
+      var clock = document.getElementById("clock");
+      var meridiem = document.getElementById("meridiem");
+      var themeMode = document.getElementById("themeMode");
+      var lastMinute = -1;
+      function applyTheme(hour) {
+        var mode = themeMode.value;
+        var dark = mode === "dark" || (mode === "auto" && (hour >= 19 || hour < 7));
+        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      }
+      function updateClock() {
+        var now = new Date();
+        var hour = now.getHours();
+        var minute = now.getMinutes();
+        clock.textContent = (hour % 12 || 12) + ":" + (minute < 10 ? "0" : "") + minute;
+        clock.setAttribute("aria-label", now.toLocaleTimeString());
+        meridiem.textContent = hour < 12 ? "AM" : "PM";
+        document.getElementById("dateLine").textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+        document.getElementById("dayHint").textContent = hour >= 7 && hour < 19 ? "Day · browser local" : "Night · browser local";
+        if (minute !== lastMinute) { applyTheme(hour); lastMinute = minute; }
+      }
+      themeMode.addEventListener("change", function () { applyTheme(new Date().getHours()); });
+      updateClock();
+      window.setInterval(updateClock, 1000);
+
+      var frames = [document.getElementById("photoA"), document.getElementById("photoB")];
+      var activeFrame = -1;
+      var photoIndex = 0;
+      var photos = samples.slice(0);
+      var failed = [];
+      var localUrls = [];
+      var paused = false;
+      var timer = null;
+      var errorPanel = document.getElementById("photoError");
+      var pauseButton = document.getElementById("pausePhotos");
+      function setPaused(value) {
+        paused = value;
+        pauseButton.textContent = paused ? "Play" : "Pause";
+        pauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
+        if (timer) { window.clearTimeout(timer); timer = null; }
+        if (!paused && photos.length > 1) { timer = window.setTimeout(function () { showPhoto(photoIndex + 1); }, 20000); }
+      }
+      function showPhoto(index, attempts) {
+        var tried = attempts || 0;
+        if (timer) { window.clearTimeout(timer); timer = null; }
+        if (tried >= photos.length) {
+          errorPanel.hidden = false;
+          setPaused(true);
+          return;
+        }
+        index = (index + photos.length) % photos.length;
+        if (failed[index]) { showPhoto(index + 1, tried + 1); return; }
+        var target = activeFrame === 0 ? 1 : 0;
+        var image = frames[target];
+        var settled = false;
+        image.onload = function () {
+          if (settled) { return; }
+          settled = true;
+          image.className = "photo active";
+          if (activeFrame !== -1) { frames[activeFrame].className = "photo"; }
+          activeFrame = target;
+          photoIndex = index;
+          errorPanel.hidden = true;
+          if (!paused) { setPaused(false); }
+        };
+        image.onerror = function () {
+          if (settled) { return; }
+          settled = true;
+          failed[index] = true;
+          errorPanel.hidden = false;
+          setPaused(true);
+        };
+        image.src = photos[index];
+        if (image.complete && image.naturalWidth > 0) { image.onload(); }
+      }
+      frames[0].onerror = function () { failed[0] = true; errorPanel.hidden = false; setPaused(true); };
+      frames[0].onload = function () { frames[0].className = "photo active"; activeFrame = 0; setPaused(false); };
+      frames[0].src = photos[0];
+      document.getElementById("nextPhoto").addEventListener("click", function () { showPhoto(photoIndex + 1); });
+      pauseButton.addEventListener("click", function () { setPaused(!paused); });
+      var photoFiles = document.getElementById("photoFiles");
+      document.getElementById("choosePhotos").addEventListener("click", function () { photoFiles.value = ""; photoFiles.click(); });
+      photoFiles.addEventListener("change", function () {
+        var selected = Array.prototype.slice.call(photoFiles.files || []).slice(0, 6);
+        var valid = selected.filter(function (file) { return file.type && file.type.indexOf("image/") === 0; });
+        if (!valid.length) { if (selected.length) { errorPanel.textContent = "No usable images were selected. The current photo set is unchanged."; errorPanel.hidden = false; } photoFiles.value = ""; return; }
+        var urls = [];
+        try { valid.forEach(function (file) { urls.push(window.URL.createObjectURL(file)); }); }
+        catch (error) { urls.forEach(function (url) { window.URL.revokeObjectURL(url); }); errorPanel.textContent = "Those photos could not be previewed. The current set is unchanged."; errorPanel.hidden = false; photoFiles.value = ""; return; }
+        var checks = urls.length;
+        var good = [];
+        urls.forEach(function (url) {
+          var test = new Image();
+          test.onload = function () { good.push(url); done(); };
+          test.onerror = function () { window.URL.revokeObjectURL(url); done(); };
+          test.src = url;
+        });
+        function done() {
+          checks -= 1;
+          if (checks) { return; }
+          if (!good.length) { errorPanel.textContent = "Those images could not be read. The current set is unchanged."; errorPanel.hidden = false; photoFiles.value = ""; return; }
+          localUrls.forEach(function (url) { window.URL.revokeObjectURL(url); });
+          localUrls = good;
+          photos = good.slice(0);
+          failed = [];
+          photoIndex = -1;
+          paused = false;
+          errorPanel.textContent = "This photograph could not be displayed. Choose another photo or select a new source.";
+          showPhoto(0);
+          photoFiles.value = "";
+        }
+      });
+      window.addEventListener("beforeunload", function () { localUrls.forEach(function (url) { window.URL.revokeObjectURL(url); }); });
+
+      var dialog = document.getElementById("zipDialog");
+      var zipInput = document.getElementById("zipInput");
+      var zipError = document.getElementById("zipError");
+      var opener = null;
+      function closeZip() { dialog.hidden = true; document.getElementById("pageContent").removeAttribute("aria-hidden"); zipError.textContent = ""; if (opener) { opener.focus(); } }
+      document.getElementById("zipOpen").addEventListener("click", function () {
+        opener = document.activeElement;
+        zipInput.value = "";
+        zipError.textContent = "";
+        dialog.hidden = false;
+        zipInput.focus();
+        document.getElementById("pageContent").setAttribute("aria-hidden", "true");
+      });
+      document.getElementById("zipCancel").addEventListener("click", closeZip);
+      document.getElementById("zipForm").addEventListener("submit", function (event) {
+        event.preventDefault();
+        var value = zipInput.value.replace(/^\s+|\s+$/g, "");
+        if (!/^\d{5}(?:-\d{4})?$/.test(value)) { zipError.textContent = "Enter five digits or ZIP+4, such as 00000 or 00000-0000."; zipInput.setAttribute("aria-invalid", "true"); zipInput.focus(); return; }
+        zipInput.removeAttribute("aria-invalid");
+        document.getElementById("zipLabel").textContent = "ZIP · " + value;
+        closeZip();
+      });
+      dialog.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") { event.preventDefault(); closeZip(); return; }
+        if (event.key === "Tab") {
+          var focusable = dialog.querySelectorAll("input, button");
+          var first = focusable[0];
+          var last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+      });
+    }());
+  </script>
+</body>
+</html>

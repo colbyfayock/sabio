@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Sabio — Solar Pop</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --cream: #fff4dc;
+      --blue: #1746d1;
+      --citron: #e4f542;
+      --coral: #ff654f;
+      --ink: #17234a;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      overflow: hidden;
+      background: var(--cream);
+      color: var(--ink);
+      font-family: "Arial Black", Impact, Haettenschweiler, sans-serif;
+    }
+    button, input { font: inherit; }
+    button { min-width: 44px; }
+    button:focus, input:focus, a:focus {
+      outline: 3px solid var(--coral);
+      outline-offset: 3px;
+    }
+    .poster {
+      display: flex;
+      gap: 2.2vw;
+      width: 100%;
+      height: 100vh;
+      padding: 2.5vh 2.8vw;
+    }
+    .photo-stage {
+      position: relative;
+      flex: 0 0 52%;
+      min-width: 0;
+      overflow: hidden;
+      background: var(--citron);
+      border-radius: 49% 49% 12px 12px / 25% 25% 12px 12px;
+      border: 8px solid var(--citron);
+    }
+    .photo-stage img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 1.2s ease;
+    }
+    .photo-stage img.visible { opacity: 1; }
+    .photo-fallback {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+      background: var(--coral);
+      color: var(--ink);
+      text-align: center;
+      font: 900 30px/1.1 "Arial Black", Impact, sans-serif;
+    }
+    .photo-credit {
+      position: absolute;
+      right: 18px;
+      bottom: 17px;
+      padding: 8px 11px;
+      background: var(--cream);
+      color: var(--ink);
+      font: 700 11px/1.2 Arial, sans-serif;
+      text-decoration: none;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .info-panel {
+      position: relative;
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 30px 32px 24px;
+      background: var(--blue);
+      color: var(--cream);
+    }
+    .info-panel::before {
+      position: absolute;
+      top: -47px;
+      right: -34px;
+      width: 155px;
+      height: 155px;
+      border: 18px solid var(--coral);
+      border-radius: 50%;
+      content: "";
+      pointer-events: none;
+    }
+    .date-line {
+      position: relative;
+      z-index: 1;
+      align-self: flex-start;
+      padding: 10px 14px;
+      background: var(--citron);
+      color: var(--ink);
+      font: 900 15px/1.15 "Arial Black", Impact, sans-serif;
+      letter-spacing: .045em;
+      text-transform: uppercase;
+    }
+    .clock-label {
+      margin: 24px 0 0;
+      color: var(--citron);
+      font: 700 12px/1.2 Arial, sans-serif;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .clock {
+      margin: 3px 0 0 -8px;
+      color: var(--cream);
+      font-size: 104px;
+      line-height: .98;
+      letter-spacing: -.075em;
+      white-space: nowrap;
+    }
+    .weather {
+      display: flex;
+      align-items: flex-end;
+      gap: 20px;
+      margin-top: auto;
+      padding: 14px 0 20px;
+      border-top: 3px solid var(--citron);
+    }
+    .temperature {
+      color: var(--citron);
+      font-size: 128px;
+      line-height: .84;
+      letter-spacing: -.09em;
+      white-space: nowrap;
+    }
+    .weather-copy { padding-bottom: 5px; }
+    .weather-label {
+      margin-bottom: 8px;
+      color: var(--cream);
+      font: 700 11px/1.2 Arial, sans-serif;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+    .condition {
+      color: var(--cream);
+      font-size: 24px;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .high-low {
+      margin-top: 8px;
+      color: var(--citron);
+      font: 900 14px/1.2 Arial, sans-serif;
+      letter-spacing: .04em;
+    }
+    .tools { display: flex; flex-direction: column; gap: 10px; }
+    .button-row { display: flex; gap: 10px; }
+    .tool-button {
+      min-height: 46px;
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 0;
+      background: var(--cream);
+      color: var(--blue);
+      cursor: pointer;
+      font: 900 12px/1.1 Arial, sans-serif;
+      letter-spacing: .055em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .tool-button:hover { background: var(--citron); }
+    .button-row .tool-button { flex: 1; }
+    .zip-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .zip-label {
+      min-width: 0;
+      color: var(--cream);
+      font: 700 11px/1.25 Arial, sans-serif;
+      letter-spacing: .04em;
+    }
+    .zip-label strong { color: var(--citron); font-size: 14px; }
+    .zip-row .tool-button { flex: 0 0 auto; background: var(--coral); color: var(--ink); }
+    .disclaimer {
+      margin: 12px 0 0;
+      color: #dce4ff;
+      font: 11px/1.35 Arial, sans-serif;
+    }
+    .file-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
+    .dialog-backdrop {
+      position: fixed;
+      z-index: 5;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(23, 35, 74, .78);
+    }
+    .dialog-backdrop.open { display: flex; }
+    .zip-dialog {
+      width: 100%;
+      max-width: 420px;
+      padding: 26px;
+      border: 7px solid var(--citron);
+      background: var(--cream);
+      color: var(--ink);
+      box-shadow: 12px 12px 0 var(--coral);
+      font-family: Arial, sans-serif;
+    }
+    .zip-dialog h2 {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font: 900 25px/1 "Arial Black", Impact, sans-serif;
+      text-transform: uppercase;
+    }
+    .zip-dialog p { margin: 0 0 16px; font-size: 14px; line-height: 1.4; }
+    .zip-dialog input {
+      width: 100%;
+      min-height: 50px;
+      margin-bottom: 8px;
+      padding: 10px 12px;
+      border: 2px solid var(--blue);
+      border-radius: 0;
+      background: #fffdf7;
+      color: var(--ink);
+      font-size: 20px;
+    }
+    .zip-error { min-height: 20px; color: #a52a1d; font-size: 13px; }
+    .dialog-actions { display: flex; gap: 10px; margin-top: 12px; }
+    .dialog-actions .tool-button { flex: 1; background: var(--blue); color: white; }
+    .dialog-actions .cancel-button { background: #e7e2d6; color: var(--ink); }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    @media (max-width: 760px) {
+      .poster { flex-direction: column; gap: 10px; padding: 10px; }
+      .photo-stage {
+        flex: 0 0 37vh;
+        width: 100%;
+        border-width: 6px;
+        border-radius: 48% 48% 10px 10px / 26% 26% 10px 10px;
+      }
+      .photo-credit { right: 10px; bottom: 10px; padding: 7px 8px; font-size: 9px; }
+      .info-panel { flex: 1; padding: 14px 18px 12px; }
+      .info-panel::before { top: -57px; right: -40px; width: 116px; height: 116px; border-width: 14px; }
+      .date-line { padding: 7px 9px; font-size: 12px; }
+      .clock-label { margin-top: 9px; font-size: 10px; }
+      .clock { margin-left: -4px; font-size: 78px; }
+      .weather { gap: 14px; padding: 10px 0 12px; }
+      .temperature { font-size: 84px; }
+      .weather-label { margin-bottom: 5px; font-size: 9px; }
+      .condition { font-size: 18px; }
+      .high-low { margin-top: 5px; font-size: 12px; }
+      .tools { gap: 7px; }
+      .button-row { gap: 7px; }
+      .tool-button { min-height: 44px; padding: 9px 10px; font-size: 10px; }
+      .zip-label { font-size: 10px; }
+      .zip-label strong { font-size: 12px; }
+      .zip-row .tool-button { min-height: 44px; }
+      .disclaimer { margin-top: 7px; font-size: 10px; }
+    }
+    @media (max-width: 390px), (max-height: 650px) {
+      .poster { gap: 7px; padding: 7px; }
+      .photo-stage { flex-basis: 33vh; }
+      .info-panel { padding: 10px 13px 9px; }
+      .clock-label { margin-top: 5px; }
+      .clock { font-size: 56px; }
+      .weather { padding: 7px 0 8px; }
+      .temperature { font-size: 72px; }
+      .disclaimer { margin-top: 4px; font-size: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0s !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="poster" aria-label="Solar Pop display mockup">
+    <section class="photo-stage" aria-label="Photo slideshow">
+      <img id="photoA" class="visible" alt="Mountain lake and forest landscape">
+      <img id="photoB" alt="">
+      <div id="photoFallback" class="photo-fallback" role="status">PHOTO UNAVAILABLE</div>
+      <a class="photo-credit" href="https://unsplash.com/" target="_blank" rel="noopener noreferrer">Photo source: Unsplash</a>
+    </section>
+
+    <section class="info-panel" aria-label="Local time and sample weather">
+      <div id="date" class="date-line"></div>
+      <p class="clock-label">Browser local time</p>
+      <time id="clock" class="clock"></time>
+
+      <div class="weather" aria-label="Sample weather forecast in Fahrenheit">
+        <div class="temperature">78°</div>
+        <div class="weather-copy">
+          <div class="weather-label">Sample forecast · °F</div>
+          <div class="condition">Sunny</div>
+          <div class="high-low">HIGH 82° &nbsp; LOW 67°</div>
+        </div>
+      </div>
+
+      <div class="tools">
+        <div class="button-row">
+          <button id="pauseButton" class="tool-button" type="button" aria-pressed="false">Pause photos</button>
+          <button id="nextButton" class="tool-button" type="button">Next photo</button>
+          <button id="sourceButton" class="tool-button" type="button">Choose photos</button>
+        </div>
+        <input id="photoFiles" class="file-input" type="file" accept="image/*" multiple aria-label="Choose up to six photos from this device">
+        <div class="zip-row">
+          <div class="zip-label">ZIP label only<br><strong id="zipDisplay">00000</strong></div>
+          <button id="editZip" class="tool-button" type="button">Edit ZIP</button>
+        </div>
+      </div>
+      <p class="disclaimer">Mockup only: live browser clock, sample weather, no location lookup. Photos stay in this browser preview; nothing is uploaded or saved.</p>
+      <div id="photoStatus" class="sr-only" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <div id="dialogBackdrop" class="dialog-backdrop">
+    <section id="zipDialog" class="zip-dialog" role="dialog" aria-modal="true" aria-labelledby="zipTitle" aria-describedby="zipHelp">
+      <form id="zipForm" novalidate>
+        <h2 id="zipTitle">ZIP label</h2>
+        <p id="zipHelp">Design mock: ZIP changes this label only. Live weather and timezone wiring come later.</p>
+        <label for="zipInput">US ZIP code</label>
+        <input id="zipInput" type="text" inputmode="numeric" autocomplete="off" maxlength="10" aria-describedby="zipHelp zipError">
+        <div id="zipError" class="zip-error" aria-live="polite"></div>
+        <div class="dialog-actions">
+          <button class="tool-button" type="submit">Save label</button>
+          <button id="cancelZip" class="tool-button cancel-button" type="button">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var defaultPhotos = [
+        'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=75&fm=jpg',
+        'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=75&fm=jpg',
+        'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=75&fm=jpg'
+      ];
+      var photos = defaultPhotos.slice();
+      var photoIndex = 2;
+      var current = document.getElementById('photoA');
+      var incoming = document.getElementById('photoB');
+      var photoFallback = document.getElementById('photoFallback');
+      var photoTimer = null;
+      var transitioning = false;
+      var paused = false;
+      var failed = false;
+      var localUrls = [];
+      var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var transitionTime = reducedMotion ? 0 : 1200;
+
+      function updateClock() {
+        var now = new Date();
+        var hours = now.getHours();
+        var shownHours = hours % 12 || 12;
+        var minutes = now.getMinutes();
+        var dateText = new Intl.DateTimeFormat(undefined, {
+          weekday: 'long', month: 'long', day: 'numeric'
+        }).format(now);
+        var timeText = shownHours + ':' + (minutes < 10 ? '0' : '') + minutes + (hours < 12 ? ' AM' : ' PM');
+        document.getElementById('date').textContent = dateText;
+        document.getElementById('clock').textContent = timeText;
+        document.getElementById('clock').setAttribute('datetime', now.toISOString());
+      }
+
+      function stopTimer() {
+        if (photoTimer) window.clearTimeout(photoTimer);
+        photoTimer = null;
+      }
+
+      function scheduleNext() {
+        stopTimer();
+        if (!paused && !failed && photos.length > 1) {
+          photoTimer = window.setTimeout(function () {
+            showPhoto((photoIndex + 1) % photos.length, true);
+          }, 20000);
+        }
+      }
+
+      function showFailure() {
+        failed = true;
+        stopTimer();
+        current.className = '';
+        incoming.className = '';
+        photoFallback.style.display = 'flex';
+        document.getElementById('photoStatus').textContent = 'Photo unavailable. Choose another photo source to continue.';
+      }
+
+      function showPhoto(nextIndex, automatic) {
+        if (transitioning || failed || photos.length === 0) return;
+        stopTimer();
+        var targetIndex = (nextIndex + photos.length) % photos.length;
+        if (targetIndex === photoIndex && !failed) {
+          scheduleNext();
+          return;
+        }
+        transitioning = true;
+        incoming.onload = function () {
+          incoming.onload = null;
+          incoming.onerror = null;
+          photoFallback.style.display = 'none';
+          incoming.className = 'visible';
+          current.className = '';
+          window.setTimeout(function () {
+            var oldCurrent = current;
+            current = incoming;
+            incoming = oldCurrent;
+            incoming.removeAttribute('src');
+            photoIndex = targetIndex;
+            transitioning = false;
+            document.getElementById('photoStatus').textContent = 'Photo ' + (photoIndex + 1) + ' of ' + photos.length;
+            scheduleNext();
+          }, transitionTime);
+        };
+        incoming.onerror = showFailure;
+        incoming.src = photos[targetIndex];
+        if (automatic) {
+          document.getElementById('photoStatus').textContent = 'Changing photo';
+        }
+      }
+
+      current.onerror = showFailure;
+      current.src = photos[photoIndex];
+      current.onload = function () { scheduleNext(); };
+      updateClock();
+      window.setInterval(updateClock, 15000);
+
+      document.getElementById('pauseButton').addEventListener('click', function () {
+        paused = !paused;
+        this.setAttribute('aria-pressed', paused ? 'true' : 'false');
+        this.textContent = paused ? 'Resume photos' : 'Pause photos';
+        if (paused) stopTimer();
+        else scheduleNext();
+      });
+      document.getElementById('nextButton').addEventListener('click', function () {
+        if (photos.length > 1) showPhoto((photoIndex + 1) % photos.length, false);
+      });
+
+      document.getElementById('sourceButton').addEventListener('click', function () {
+        document.getElementById('photoFiles').click();
+      });
+      document.getElementById('photoFiles').addEventListener('change', function () {
+        var selected = Array.prototype.slice.call(this.files || []);
+        this.value = '';
+        if (!selected.length) return;
+        var valid = selected.filter(function (file) { return /^image\//i.test(file.type); }).slice(0, 6);
+        if (!valid.length) {
+          document.getElementById('photoStatus').textContent = 'No supported images selected. Existing photos were kept.';
+          return;
+        }
+        localUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+        localUrls = valid.map(function (file) { return URL.createObjectURL(file); });
+        photos = localUrls.slice();
+        photoIndex = -1;
+        failed = false;
+        photoFallback.style.display = 'none';
+        current.className = '';
+        incoming.className = '';
+        transitioning = false;
+        showPhoto(0, false);
+        document.getElementById('photoStatus').textContent = valid.length + ' local photo' + (valid.length === 1 ? '' : 's') + ' selected. Files are not uploaded or saved.';
+      });
+      window.addEventListener('beforeunload', function () {
+        localUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+      });
+
+      var backdrop = document.getElementById('dialogBackdrop');
+      var zipInput = document.getElementById('zipInput');
+      var zipError = document.getElementById('zipError');
+      var zipDisplay = document.getElementById('zipDisplay');
+      var editButton = document.getElementById('editZip');
+      var zipOpen = false;
+
+      function closeZip() {
+        if (!zipOpen) return;
+        zipOpen = false;
+        backdrop.className = 'dialog-backdrop';
+        editButton.focus();
+      }
+      function openZip() {
+        zipOpen = true;
+        zipError.textContent = '';
+        zipInput.value = zipDisplay.textContent;
+        backdrop.className = 'dialog-backdrop open';
+        zipInput.focus();
+        zipInput.select();
+      }
+      editButton.addEventListener('click', openZip);
+      document.getElementById('cancelZip').addEventListener('click', closeZip);
+      backdrop.addEventListener('click', function (event) {
+        if (event.target === backdrop) closeZip();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (!zipOpen) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeZip();
+        } else if (event.key === 'Tab') {
+          var focusables = document.getElementById('zipDialog').querySelectorAll('input, button');
+          var first = focusables[0];
+          var last = focusables[focusables.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      });
+      document.getElementById('zipForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var value = zipInput.value.trim();
+        if (!/^\d{5}(?:-\d{4})?$/.test(value)) {
+          zipError.textContent = 'Enter five digits or ZIP+4 (00000 or 00000-0000).';
+          zipInput.focus();
+          return;
+        }
+        zipDisplay.textContent = value;
+        closeZip();
+      });
+    }());
+  </script>
+</body>
+</html>

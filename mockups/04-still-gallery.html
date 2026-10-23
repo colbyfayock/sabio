@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Still Gallery — Sabio mockup 04</title>
+  <style>
+    :root { color: #151515; background: #fff; font-family: Georgia, "Times New Roman", serif; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { min-width: 280px; }
+    button, input { font: inherit; }
+    button { min-width: 44px; color: inherit; background: #fff; border: 1px solid #222; cursor: pointer; }
+    button:hover { background: #f3f3f1; }
+    button:focus, input:focus, a:focus { outline: 3px solid #b53229; outline-offset: 3px; }
+    .gallery { height: 100vh; min-height: 480px; display: flex; flex-direction: column; }
+    .artwork { height: 65%; min-height: 0; padding: 24px 5.5% 18px; display: flex; align-items: stretch; justify-content: center; }
+    .mat { position: relative; width: 100%; max-width: 1400px; height: 100%; padding: 10px; border: 1px solid #171717; background: #fff; }
+    .photo { display: block; width: 100%; height: 100%; object-fit: cover; opacity: 1; transition: opacity 1.2s ease; background: #f2f1ee; }
+    .photo.changing { opacity: .12; }
+    .photo-error { position: absolute; inset: 10px; display: none; align-items: center; justify-content: center; padding: 24px; text-align: center; background: #f2f1ee; font: 14px/1.5 "Courier New", monospace; }
+    .photo-error.visible { display: flex; }
+    .info { flex: 1; min-height: 0; border-top: 1px solid #171717; padding: 20px 5.5% 16px; display: flex; flex-direction: column; justify-content: space-between; }
+    .info-main { display: flex; align-items: center; justify-content: space-between; gap: 28px; }
+    .time-block { display: flex; align-items: center; gap: 20px; }
+    .clock { width: 104px; height: 104px; flex: 0 0 auto; }
+    .digital { font: 36px/1 "Courier New", monospace; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
+    .date { margin-top: 9px; color: #555; font: 12px/1.4 "Courier New", monospace; letter-spacing: .04em; text-transform: uppercase; }
+    .weather { text-align: right; min-width: 200px; }
+    .weather-temp { font-size: 39px; line-height: 1; letter-spacing: -.04em; }
+    .weather-copy { margin-top: 9px; font: 12px/1.5 "Courier New", monospace; }
+    .weather-note { margin-top: 3px; color: #656565; font: 10px/1.4 "Courier New", monospace; }
+    .accent { color: #b53229; }
+    .info-foot { border-top: 1px solid #d7d7d4; padding-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .controls { display: flex; align-items: center; gap: 8px; }
+    .control { min-height: 44px; padding: 0 14px; font: 11px/1.2 "Courier New", monospace; letter-spacing: .02em; }
+    .control .accent { padding-right: 5px; }
+    .location { font: 11px/1.4 "Courier New", monospace; color: #444; }
+    .credit { color: #555; font: 10px/1.4 "Courier New", monospace; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+    .dialog-shade { position: fixed; z-index: 5; inset: 0; display: none; align-items: center; justify-content: center; padding: 18px; background: rgba(255,255,255,.94); }
+    .dialog-shade.open { display: flex; }
+    .zip-dialog { width: 100%; max-width: 420px; padding: 28px; border: 1px solid #171717; background: #fff; box-shadow: 8px 8px 0 #e9e8e5; }
+    .dialog-kicker { margin: 0 0 10px; color: #b53229; font: 11px/1.4 "Courier New", monospace; text-transform: uppercase; letter-spacing: .08em; }
+    .zip-dialog h2 { margin: 0 0 8px; font-size: 27px; font-weight: normal; }
+    .dialog-copy { margin: 0 0 20px; color: #555; font: 12px/1.6 "Courier New", monospace; }
+    .zip-label { display: block; margin-bottom: 7px; font: 11px "Courier New", monospace; }
+    .zip-input { width: 100%; height: 48px; padding: 0 12px; border: 1px solid #555; border-radius: 0; font: 18px "Courier New", monospace; }
+    .zip-error { min-height: 20px; margin: 7px 0 11px; color: #a42620; font: 11px/1.4 "Courier New", monospace; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .dialog-actions button { min-width: 92px; min-height: 44px; padding: 0 13px; font: 11px "Courier New", monospace; }
+    @media (max-width: 600px) {
+      .gallery { min-height: 0; }
+      .artwork { height: 58%; padding: 12px 4% 10px; }
+      .mat { padding: 6px; }
+      .photo-error { inset: 6px; }
+      .info { padding: 13px 4% 10px; }
+      .info-main { gap: 8px; }
+      .time-block { gap: 10px; }
+      .clock { width: 68px; height: 68px; }
+      .digital { font-size: 24px; letter-spacing: -1px; }
+      .date { margin-top: 6px; font-size: 9px; }
+      .weather { min-width: 0; }
+      .weather-temp { font-size: 30px; }
+      .weather-copy { margin-top: 5px; font-size: 9px; }
+      .weather-note { font-size: 8px; }
+      .info-foot { align-items: flex-start; flex-direction: column; gap: 8px; padding-top: 8px; }
+      .controls { width: 100%; gap: 5px; }
+      .control { flex: 1; min-width: 0; padding: 0 5px; font-size: 9px; }
+      .location { font-size: 9px; }
+      .credit { position: absolute; right: 4%; bottom: 8px; font-size: 8px; }
+    }
+    @media (max-width: 360px) {
+      .clock { width: 58px; height: 58px; }
+      .digital { font-size: 21px; }
+      .weather-temp { font-size: 26px; }
+      .control { font-size: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .photo { transition-duration: .01ms; } }
+  </style>
+</head>
+<body>
+  <main class="gallery" aria-label="Still Gallery photo display">
+    <section class="artwork" aria-label="Selected photograph">
+      <div class="mat">
+        <img class="photo" id="photo" alt="Landscape photograph" referrerpolicy="no-referrer">
+        <div class="photo-error" id="photoError" role="status">This photograph could not be displayed.<br>Choose another image or select a new source.</div>
+      </div>
+    </section>
+    <section class="info" aria-label="Time and sample weather">
+      <div class="info-main">
+        <div class="time-block">
+          <svg class="clock" viewBox="0 0 100 100" role="img" aria-label="Analog local time" id="clock">
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#171717" stroke-width="1.2"/>
+            <g stroke="#171717" stroke-width="1.4">
+              <path d="M50 7v5 M50 88v5 M7 50h5 M88 50h5"/>
+              <path d="M28.5 12.4l2.5 4.4 M69 83.2l2.5 4.4 M12.4 71.5l4.4-2.5 M83.2 31l4.4-2.5 M28.5 87.6l2.5-4.4 M69 16.8l2.5-4.4 M12.4 28.5l4.4 2.5 M83.2 69l4.4 2.5"/>
+            </g>
+            <line id="hourHand" x1="50" y1="50" x2="50" y2="29" stroke="#171717" stroke-width="2.4" stroke-linecap="round"/>
+            <line id="minuteHand" x1="50" y1="50" x2="50" y2="17" stroke="#171717" stroke-width="1.6" stroke-linecap="round"/>
+            <line id="secondHand" x1="50" y1="54" x2="50" y2="12" stroke="#b53229" stroke-width="1" stroke-linecap="round"/>
+            <circle cx="50" cy="50" r="2.2" fill="#b53229"/>
+          </svg>
+          <div>
+            <time class="digital" id="digitalTime">--:--:--</time>
+            <div class="date" id="date">Local browser time</div>
+          </div>
+        </div>
+        <div class="weather" aria-label="Sample weather, not live">
+          <div class="weather-temp">72<span class="accent">°</span>F</div>
+          <div class="weather-copy">FAIR · HIGH 76°F / LOW 59°F</div>
+          <div class="weather-note">SAMPLE WEATHER · NOT LIVE</div>
+        </div>
+      </div>
+      <div class="info-foot">
+        <div class="controls" aria-label="Photo and location controls">
+          <button class="control" id="sourceButton" type="button"><span class="accent">01</span> SOURCE</button>
+          <input id="photoFiles" type="file" accept="image/*" multiple hidden>
+          <button class="control" id="pauseButton" type="button" aria-pressed="false"><span class="accent">02</span> PAUSE</button>
+          <button class="control" id="nextButton" type="button"><span class="accent">03</span> NEXT PHOTO</button>
+          <button class="control" id="zipButton" type="button"><span class="accent">04</span> EDIT ZIP</button>
+        </div>
+        <div class="location" id="locationLabel">REFERENCE ZIP · NOT SET <span class="accent">/</span> MOCK FORECAST TIMEZONE</div>
+        <a class="credit" href="https://unsplash.com" target="_blank" rel="noopener noreferrer">Photographs via Unsplash</a>
+      </div>
+    </section>
+  </main>
+  <div class="dialog-shade" id="dialogShade" aria-hidden="true">
+    <section class="zip-dialog" id="zipDialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle" aria-describedby="dialogCopy">
+      <p class="dialog-kicker">Reference label only</p>
+      <h2 id="dialogTitle">Set a ZIP code</h2>
+      <p class="dialog-copy" id="dialogCopy">This changes the displayed label only. The mock forecast and its timezone are not connected to your ZIP. No location is looked up or saved.</p>
+      <form id="zipForm" novalidate>
+        <label class="zip-label" for="zipInput">US ZIP or ZIP+4</label>
+        <input class="zip-input" id="zipInput" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="10" placeholder="00000 or 00000-0000" aria-describedby="zipError">
+        <p class="zip-error" id="zipError" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="cancelZip" type="button">CANCEL</button>
+          <button type="submit">APPLY</button>
+        </div>
+      </form>
+    </section>
+  </div>
+  <script>
+    (function () {
+      var defaults = [
+        'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=75&fm=jpg',
+        'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=75&fm=jpg',
+        'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=75&fm=jpg'
+      ];
+      var photo = document.getElementById('photo');
+      var error = document.getElementById('photoError');
+      var files = document.getElementById('photoFiles');
+      var sourceButton = document.getElementById('sourceButton');
+      var pauseButton = document.getElementById('pauseButton');
+      var nextButton = document.getElementById('nextButton');
+      var photos = defaults.map(function (url) { return { url: url, local: false, failed: false }; });
+      var current = -1;
+      var paused = false;
+      var timer = null;
+      var generation = 0;
+      var localUrls = [];
+
+      function setPhoto(index, tried) {
+        var attempts = tried || 0;
+        if (attempts >= photos.length) {
+          photo.className = 'photo';
+          photo.removeAttribute('src');
+          error.className = 'photo-error visible';
+          clearInterval(timer);
+          timer = null;
+          return;
+        }
+        index = (index + photos.length) % photos.length;
+        if (photos[index].failed) { setPhoto(index + 1, attempts + 1); return; }
+        current = index;
+        var token = ++generation;
+        error.className = 'photo-error';
+        photo.className = 'photo changing';
+        photo.onload = function () {
+          if (token !== generation) return;
+          photo.className = 'photo';
+          photo.alt = 'Landscape photograph ' + (current + 1) + ' of ' + photos.length;
+        };
+        photo.onerror = function () {
+          if (token !== generation) return;
+          photos[index].failed = true;
+          setPhoto(index + 1, attempts + 1);
+        };
+        photo.src = photos[index].url;
+      }
+      function startTimer() {
+        clearInterval(timer);
+        timer = paused ? null : setInterval(function () { setPhoto(current + 1, 0); }, 20000);
+      }
+      function nextPhoto() {
+        if (photos.length) { setPhoto(current + 1, 0); startTimer(); }
+      }
+      sourceButton.addEventListener('click', function () { files.click(); });
+      files.addEventListener('change', function () {
+        var selected = Array.prototype.slice.call(files.files || []).slice(0, 6);
+        if (!selected.length) return;
+        var valid = selected.filter(function (file) { return file.type && file.type.indexOf('image/') === 0; });
+        if (!valid.length) { error.textContent = 'No supported image files were selected. Choose up to six image files.'; error.className = 'photo-error visible'; return; }
+        localUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+        localUrls = valid.map(function (file) { return URL.createObjectURL(file); });
+        photos = localUrls.map(function (url) { return { url: url, local: true, failed: false }; });
+        current = -1;
+        error.textContent = 'This photograph could not be displayed. Choose another image or select a new source.';
+        setPhoto(0, 0);
+        startTimer();
+        if (valid.length < selected.length) { error.textContent = 'Some selected files were not images; showing the supported images only.'; }
+        files.value = '';
+      });
+      pauseButton.addEventListener('click', function () {
+        paused = !paused;
+        pauseButton.setAttribute('aria-pressed', paused ? 'true' : 'false');
+        pauseButton.innerHTML = '<span class="accent">02</span> ' + (paused ? 'RESUME' : 'PAUSE');
+        startTimer();
+      });
+      nextButton.addEventListener('click', nextPhoto);
+      setPhoto(0, 0);
+      startTimer();
+
+      function updateClock() {
+        var now = new Date();
+        var h = now.getHours();
+        var m = now.getMinutes();
+        var s = now.getSeconds();
+        function pad(value) { return value < 10 ? '0' + value : String(value); }
+        document.getElementById('digitalTime').textContent = pad(h) + ':' + pad(m) + ':' + pad(s);
+        var days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        document.getElementById('date').textContent = days[now.getDay()] + ' · ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear() + ' · LOCAL';
+        document.getElementById('hourHand').setAttribute('transform', 'rotate(' + ((h % 12) * 30 + m * .5) + ' 50 50)');
+        document.getElementById('minuteHand').setAttribute('transform', 'rotate(' + (m * 6 + s * .1) + ' 50 50)');
+        document.getElementById('secondHand').setAttribute('transform', 'rotate(' + (s * 6) + ' 50 50)');
+        document.getElementById('clock').setAttribute('aria-label', 'Analog local time ' + pad(h) + ':' + pad(m));
+      }
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      var shade = document.getElementById('dialogShade');
+      var dialog = document.getElementById('zipDialog');
+      var zipInput = document.getElementById('zipInput');
+      var zipError = document.getElementById('zipError');
+      var zipButton = document.getElementById('zipButton');
+      var locationLabel = document.getElementById('locationLabel');
+      var opener = null;
+      var savedZip = '';
+      function closeDialog() {
+        shade.className = 'dialog-shade';
+        shade.setAttribute('aria-hidden', 'true');
+        zipError.textContent = '';
+        if (opener) opener.focus();
+      }
+      function openDialog() {
+        opener = document.activeElement;
+        zipInput.value = savedZip;
+        zipError.textContent = '';
+        shade.className = 'dialog-shade open';
+        shade.setAttribute('aria-hidden', 'false');
+        zipInput.focus();
+      }
+      zipButton.addEventListener('click', openDialog);
+      document.getElementById('cancelZip').addEventListener('click', closeDialog);
+      document.getElementById('zipForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var value = zipInput.value.replace(/^\s+|\s+$/g, '');
+        if (!/^\d{5}(?:-\d{4})?$/.test(value)) {
+          zipError.textContent = 'Enter five digits or ZIP+4 (for example, 00000 or 00000-0000).';
+          zipInput.focus();
+          return;
+        }
+        savedZip = value;
+        locationLabel.textContent = 'REFERENCE ZIP · ' + value + ' / MOCK FORECAST TIMEZONE';
+        closeDialog();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (shade.className.indexOf('open') === -1) return;
+        if (event.key === 'Escape') { event.preventDefault(); closeDialog(); return; }
+        if (event.key === 'Tab') {
+          var focusable = dialog.querySelectorAll('input, button');
+          var first = focusable[0];
+          var last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+      });
+    }());
+  </script>
+</body>
+</html>
