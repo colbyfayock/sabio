@@ -1,12 +1,13 @@
 # Access-control implementation
 
-Status: **locally tested managed-mode code, initial deployment partly verified**. The checked-in
+Status: **locally tested managed-mode code, deployed and partly verified**. The checked-in
 configuration stays `APP_MODE=preview`, uses an all-zero local D1 placeholder, and
 has no owner/origin configuration. A separate ignored owner-local production config
 binds the real D1 database, managed Worker and admin-only Access application. Its
 reusable policy allows only the selected owner's Cloudflare login email. Remote
-unapproved denial, login redirects, CSRF and pending enrollment were checked; signed-in
-approval/revocation and hardware remain unverified. Do not connect private data or
+unapproved denial, login redirects, CSRF, pending enrollment, owner approval,
+authorized weather and revocation were checked; the cleanup cron, Access token
+lifetime, log redaction and hardware remain unverified. Do not connect private data or
 treat this document as authorization for additional cloud changes.
 
 ## Modes and trust boundaries

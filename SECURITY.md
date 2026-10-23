@@ -13,9 +13,10 @@ configured team's certificates, checks issuer/audience/lifetime and actual owner
 email, and rejects plain identity headers. Pairing uses a separate high-entropy
 pending-browser cookie and atomic one-time consumption; display sessions are scoped,
 finite and revocable in D1. Weather requires a session in managed mode. The initial
-deployment has a real owner-only Access policy/application and D1 database; signed-in
-owner approval and revocation still require deployed validation. Unapproved denial,
-admin login redirects and pending enrollment have been verified remotely. No private-data
+deployment has a real owner-only Access policy/application and D1 database. Unapproved
+denial, admin login redirects, pending enrollment, and an owner-run approval, authorized
+weather and revocation pass have been verified remotely. Access token lifetime, the
+scheduled cleanup run and production logs still need observation. No private-data
 integration is implemented. Never send personal account credentials or private
 integrations to this app. Wrangler authentication is not deployment authorization.
 

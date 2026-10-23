@@ -11,9 +11,11 @@ weather and timezone; configure public image URLs for the slideshow. There is no
 calendar, agenda, or checklist. The default preview only enables weather/bootstrap
 on loopback. An owner-managed Cloudflare deployment now uses a real Access application,
 D1 database and managed Worker. Public-shell, unapproved-browser denial, Access login
-redirect and pending-enrollment checks passed against that deployment. Signed-in owner
-approval, live authorized weather and revocation still need production verification;
-the frame has not been tested. Do not put private account data or credentials into the app.
+redirect and pending-enrollment checks passed against that deployment. An owner-run
+check on 2026-10-22 also paired a second browser, loaded the dashboard, resolved live
+weather, and revoked both browsers back to the approval gate. Access token lifetime,
+the scheduled cleanup run and log redaction still need deployed observation; the frame
+has not been tested. Do not put private account data or credentials into the app.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
 The application should also support approved modern browsers. The old frame remains
@@ -258,8 +260,10 @@ explicitly saving replaces the owned record with the ZIP schema, and Reset remov
 - Initial managed deployment checks passed for HTTPS shell/headers, bootstrap denial,
   forged-session rejection, protected admin redirects, CSRF rejection, pending enrollment
   and private-file/static-fallback denial. A real browser saw the approval gate before
-  any photos/weather loaded. Owner-login completion and frame/Firefox-68 validation
-  remain unverified; local auth tests do not substitute for those checks.
+  any photos/weather loaded. An owner-run 2026-10-22 check paired a display, loaded the
+  dashboard, resolved weather and confirmed revocation on two browsers; it is a single
+  observed pass, not an independent audit. Access TTL, the first scheduled cleanup and
+  frame/Firefox-68 validation remain unverified.
 - Local D1 migration/test coverage and metadata unit/Worker integration tests cover
   coarse device labels, 5-minute update limits, weather-area timestamping, and excluding
   ZIPs/coordinates/raw User-Agent from stored/displayed details. Metadata feature has

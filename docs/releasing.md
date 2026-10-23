@@ -19,8 +19,9 @@ No paid upgrade or unrelated Access/network rule was applied.
 Remote checks passed: HTTPS shell/security headers, managed bootstrap, unapproved
 weather/display denial, forged cookie rejection, owner-path login redirects, CSRF
 denial, pending enrollment and private-path 404s. The browser gate was verified before
-photo/weather loading. The test enrollment remains unapproved and expires naturally.
-Actual owner login/approval/authorized weather/revocation and hardware are still gates.
+photo/weather loading. An owner-run 2026-10-22 pass then approved a second browser,
+loaded the dashboard, resolved weather and confirmed revocation on two browsers.
+Hardware remains a gate.
 The first release has no earlier good deployed version to roll back to; do not assume
 an untested code rollback or database recovery procedure has been proven.
 
@@ -29,6 +30,11 @@ static assets are deployed. Existing displays keep their session and fill in met
 at the next bootstrap and successful weather lookup. Owners can assign a display
 nickname. No raw UA, ZIP, coordinates, GPS or IP-derived location is stored for these
 features. See the admin metadata disclosure in [security](../SECURITY.md).
+
+Additive `0004_access_cleanup_indexes.sql` is applied and the Worker now runs the
+bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowlisted
+(the custom hostname and the `workers.dev` address); both serve the security headers
+and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
 
 ## Local verification
 
