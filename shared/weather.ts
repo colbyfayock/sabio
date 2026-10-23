@@ -2,6 +2,7 @@
 export interface WeatherForecast {
   mode: 'live';
   unit: 'fahrenheit';
+  timeZone: string;
   locationLabel: string;
   temperatureFahrenheit: number;
   highFahrenheit: number;

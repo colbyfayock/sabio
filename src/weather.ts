@@ -1,4 +1,5 @@
 import { normalizeZipCode } from '../shared/zip';
+import { isTimeZone } from '../shared/timezone';
 import type { WeatherForecast } from '../shared/weather';
 
 const PROVIDER_TIMEOUT = 5000;
@@ -93,7 +94,8 @@ const CONDITIONS: Record<number, string> = {
 };
 
 function validForecast(value: unknown, now: Date): value is WeatherForecast {
-  if (!record(value) || Object.keys(value).length !== 9 || value.mode !== 'live' || value.unit !== 'fahrenheit' ||
+  if (!record(value) || Object.keys(value).length !== 10 || value.mode !== 'live' || value.unit !== 'fahrenheit' ||
+      !isTimeZone(value.timeZone) ||
       !text(value.locationLabel, 160) || !text(value.condition, 80) ||
       !temperature(value.temperatureFahrenheit) || !temperature(value.highFahrenheit) ||
       !temperature(value.lowFahrenheit) || value.highFahrenheit < value.lowFahrenheit ||
@@ -118,9 +120,9 @@ export async function getWeatherForZip(zipCode: string, dependencies: WeatherDep
   const fetcher = dependencies.fetcher || fetch.bind(globalThis);
   const now = dependencies.now || new Date();
   // This avoids plaintext ZIPs in cache paths, not enumeration or location inference.
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`fahrenheit-v1:${zipCode}`));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`fahrenheit-v2:${zipCode}`));
   const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-  const cacheKey = new Request(new URL(`/.weather-cache/v1/${hash}`, dependencies.origin || 'https://example.com').toString());
+  const cacheKey = new Request(new URL(`/.weather-cache/v2/${hash}`, dependencies.origin || 'https://example.com').toString());
   if (dependencies.cache) {
     try {
       const cached = await dependencies.cache.match(cacheKey);
@@ -158,6 +160,7 @@ export async function getWeatherForZip(zipCode: string, dependencies: WeatherDep
   const forecast = await providerJson(forecastUrl, fetcher);
   if (!record(forecast) || !record(forecast.current) || !record(forecast.current_units) ||
       !record(forecast.daily) || !record(forecast.daily_units) ||
+      !isTimeZone(forecast.timezone) ||
       forecast.current_units.temperature_2m !== '°F' || forecast.daily_units.temperature_2m_max !== '°F' ||
       forecast.daily_units.temperature_2m_min !== '°F' || !Array.isArray(forecast.daily.temperature_2m_max) ||
       !Array.isArray(forecast.daily.temperature_2m_min) || typeof forecast.current.time !== 'number' ||
@@ -167,7 +170,7 @@ export async function getWeatherForZip(zipCode: string, dependencies: WeatherDep
   const observed = new Date(forecast.current.time * 1000);
   if (!Number.isFinite(observed.getTime())) throw new WeatherError('weather_unavailable', 502);
   const value = {
-    mode: 'live', unit: 'fahrenheit', locationLabel,
+    mode: 'live', unit: 'fahrenheit', timeZone: forecast.timezone, locationLabel,
     temperatureFahrenheit: forecast.current.temperature_2m,
     highFahrenheit: forecast.daily.temperature_2m_max[0],
     lowFahrenheit: forecast.daily.temperature_2m_min[0],

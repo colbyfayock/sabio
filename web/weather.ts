@@ -1,5 +1,6 @@
 import type { WeatherForecast } from '../shared/weather';
 import { normalizeZipCode } from '../shared/zip';
+import { isTimeZone } from '../shared/timezone';
 
 const REFRESH_INTERVAL = 600000;
 const REQUEST_TIMEOUT = 12000;
@@ -31,7 +32,7 @@ function isTemperature(value: unknown): value is number {
 
 function isWeatherForecast(value: unknown): value is WeatherForecast {
   if (!isRecord(value) || value.mode !== 'live' || value.unit !== 'fahrenheit' ||
-      !boundedString(value.locationLabel, 160) || !boundedString(value.condition, 80) ||
+      !boundedString(value.locationLabel, 160) || !boundedString(value.condition, 80) || !isTimeZone(value.timeZone) ||
       !sensibleTimestamp(value.observedAt) || !sensibleTimestamp(value.fetchedAt)) return false;
   const temperature = value.temperatureFahrenheit;
   const high = value.highFahrenheit;
@@ -57,7 +58,7 @@ function errorMessage(error: unknown): string {
   }
 }
 
-export function initializeWeatherController(getSelectedZipCode: () => string | null): WeatherController {
+export function initializeWeatherController(getSelectedZipCode: () => string | null, onTimeZone?: (value: string | null) => void, credentials: RequestCredentials = 'omit'): WeatherController {
   const temperatureNode = document.getElementById('temperature');
   const conditionNode = document.getElementById('condition');
   const rangeNode = document.getElementById('weather-range');
@@ -129,7 +130,7 @@ export function initializeWeatherController(getSelectedZipCode: () => string | n
     try {
       const response = await fetch('/api/weather', {
         method: 'POST',
-        credentials: 'omit',
+        credentials,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ zipCode: currentZip.slice(0, 5) }),
         signal: controller.signal,
@@ -145,6 +146,7 @@ export function initializeWeatherController(getSelectedZipCode: () => string | n
       if (generation !== currentGeneration || zipCode !== currentZip) return;
       forecast = payload;
       showForecast(payload);
+      onTimeZone?.(payload.timeZone);
       failures = 0;
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         setText(statusNode, `Offline · ${lastForecastDetail()}`);
@@ -186,6 +188,7 @@ export function initializeWeatherController(getSelectedZipCode: () => string | n
     request = null;
     zipCode = normalized;
     forecast = null;
+    onTimeZone?.(null);
     failures = 0;
     displayPlaceholder();
     setText(statusNode, zipCode ? 'Waiting for live weather.' : 'No ZIP selected.');

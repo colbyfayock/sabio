@@ -20,9 +20,14 @@ frame project's guarded workflow and explicit owner approvals.
 
 ## Authorization and privacy
 
-- Current repository includes a public local preview with live public Fahrenheit
-  weather and synthetic agenda/checklist data, not a working authentication service.
-  The weather endpoint is unauthenticated and sends ZIP5 to Open-Meteo; its public
+- Current repository includes a public local Horizon preview with live public Fahrenheit
+  weather/timezone and browser-local public photo settings. Managed-mode owner JWT,
+  pairing/session/revocation code is locally tested. An owner-approved initial deployment
+  now has real Access/D1 resources; deployed denial/redirect/pending checks passed,
+  but authenticated owner flows and hardware are unverified. Private production
+  configuration/identifiers stay under ignored `private/`; never bulk-read it or expose
+  its token/state. Default preview weather/bootstrap are loopback-only. Managed weather
+  requires a display session and rate limits. Weather sends ZIP5 to Open-Meteo; its public
   cache is best-effort, and hashed ZIP keys are not anonymous or secret. The browser
   stores full ZIP/ZIP+4 locally but submits only five digits in a JSON POST body.
   Never label pairing, access control, or private integrations implemented without

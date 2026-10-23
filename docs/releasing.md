@@ -1,0 +1,150 @@
+# Release runbook
+
+The checked-in default remains a **local preview**. An owner-managed initial
+deployment exists, but authenticated owner workflows and frame validation are pending.
+This runbook records release gates, not permission to deploy or create resources.
+The intended first release is a single-owner Horizon dashboard with public photos,
+ZIP-driven Fahrenheit weather/time, and individually approved display browsers.
+There is no calendar, task integration, private upload, or cloud-album sync.
+
+## Initial deployment status
+
+The first explicitly approved Free-only batch created one Sabio Worker/D1 database,
+one reusable exact-owner allow policy and one Access application covering only the
+admin UI/API paths on the account's `workers.dev` address. The owner-local configuration,
+resource/version IDs and setup credentials remain ignored under `private/`; the token
+is never a Worker binding or frontend variable. The public local config is unchanged.
+No paid upgrade or unrelated Access/network rule was applied.
+
+Remote checks passed: HTTPS shell/security headers, managed bootstrap, unapproved
+weather/display denial, forged cookie rejection, owner-path login redirects, CSRF
+denial, pending enrollment and private-path 404s. The browser gate was verified before
+photo/weather loading. The test enrollment remains unapproved and expires naturally.
+Actual owner login/approval/authorized weather/revocation and hardware are still gates.
+The first release has no earlier good deployed version to roll back to; do not assume
+an untested code rollback or database recovery procedure has been proven.
+
+Additive `0002_display_details.sql` and `0003_display_names.sql` with matching Worker/
+static assets are deployed. Existing displays keep their session and fill in metadata
+at the next bootstrap and successful weather lookup. Owners can assign a display
+nickname. No raw UA, ZIP, coordinates, GPS or IP-derived location is stored for these
+features. See the admin metadata disclosure in [security](../SECURITY.md).
+
+## Local verification
+
+From the local shared workspace parent:
+
+```sh
+pnpm --dir sabio check
+pnpm --dir sabio build:worker
+git -C sabio diff --check
+git -C sabio status --short
+```
+
+When the repository is checked out alone, use the equivalent package commands at
+its root. `build:worker` is a packaging dry run, not an upload. Keep preview servers
+on loopback. Inspect the output allowlist: display/admin HTML, CSS, app/admin JS and favicon;
+no mockups, private settings, captures, secrets, state databases or source maps.
+
+Use synthetic data in browser tests. Verify both themes at 1280×800 and a small
+viewport; ZIP Save/Cancel/Reset; keyboard focus trapping/restoration in both dialogs;
+fullscreen entry/exit; photo Pause/Next, reload persistence, broken source recovery;
+and weather timeout/offline/stale behavior. Test timezone/DST and theme boundaries.
+Inspect captures then delete the exact files immediately. Desktop browser tests do
+not establish Firefox Android 68 compatibility.
+
+## Access-control gate — implemented locally, deployment verification pending
+
+The code and tests now cover these controls; the real account/policy configuration
+and deployed verification remain required. See [access control](access-control.md).
+
+Before making the API publicly reachable:
+
+- Authenticate the owner on a trusted modern browser. A plain forwarded email header
+  is not identity verification. If using Cloudflare Access, validate its signed JWT
+  issuer, audience, signature and lifetime, and restrict the actual owner identity.
+- Store display registrations, session hashes, revocation, bounded enrollment state
+  and per-display settings in the agreed storage. Decide schema, deletion/retention
+  and atomic one-time pairing consumption before running migrations.
+- Pair only the original pending browser using its separate high-entropy credential;
+  expire codes, bound attempts and prevent replay/concurrent double consumption.
+- Use scoped Secure/HttpOnly cookies, finite lifetimes, documented renewal and CSRF
+  protection. A frame session must not authorize administration or another display.
+- Check authorization on every private route, alternate host and encoded-path variant.
+  Ensure static fallback and shared caches cannot expose configuration or private data.
+- Protect weather usage with agreed authorization and rate/abuse limits, including
+  enrollment traffic. Origin checks alone are not authentication or rate limiting.
+- Prove denial, forgery resistance, expiry, concurrent pairing, revocation and
+  cross-display isolation with automated tests and local runtime checks. Storage or
+  identity-provider failures must fail closed, not open a preview bypass.
+
+Browser approval is not hardware attestation. The obsolete/root-accessible frame
+can expose everything displayed to it; use only non-sensitive content in this MVP.
+
+## Deployment gate — requires explicit owner scope
+
+Agree on the account, Worker, HTTPS hostname, owner authentication, D1 resources,
+allowed Free-plan usage and public/private boundaries. Recheck current provider
+terms and account quotas. Do not upgrade billing, connect private sources, authorize
+accounts or create resources based only on this document.
+
+After scope is agreed:
+
+1. Recheck the installed Wrangler version/help and current Cloudflare documentation
+   for the exact remote operations. Inspect environment inheritance and bindings;
+   do not accidentally attach production state to a preview.
+2. Provision only the named resources; keep actual IDs, secrets and owner settings
+   out of public examples. Generate Env types from the selected configuration.
+3. Review migrations, retention and recovery. Back up existing state before changes
+   and confirm exactly which environment each migration targets.
+4. Set server-side secrets using protected tooling, never chat, command arguments,
+   public vars or frontend bundles. Review staged files and packaged artifacts.
+5. Review logs, outbound traces and sampling for ZIPs, provider query URLs, cookies,
+   pairing codes and personal image URLs. Current traces are deliberately disabled;
+   do not enable automatic URL tracing without a redaction review.
+6. Repeat local checks and a packaging dry run, then deploy only the approved target.
+7. Verify HTTPS assets, approval, weather, settings, denial, expiry and revocation
+   against the actual deployed routes from approved and unapproved browsers.
+   Do not call a deployment secure just because its homepage loads.
+
+The display must work without an always-on Mac or an inbound home-network service.
+Public image hosts and the weather provider still receive their respective requests.
+
+## Frame acceptance — separate approved device batch
+
+The frame can stay powered down until a deployed release is ready. The separate
+[frame project](../../classic10-charm-dashboard/) owns identity verification,
+connection/cleanup, package state and device approval procedures.
+
+Validate Firefox 68 rendering, HTTPS/API support, touch and fullscreen, photo memory
+use across an extended run, network loss/recovery, browser restart with saved settings,
+and deployed revocation. Check Home/navigation and package states after power-up.
+No firmware, USB, root or launcher changes are required by the app release itself.
+
+## Coordinated security audit backlog
+
+Owner requested a comprehensive audit of both deployed Sabio and the physical frame.
+It must cover application routes/Access/D1/cache/logging/metadata/photo providers,
+owner and display sessions/revocation, plus Android 4.4/Firefox 68, unauthenticated
+root ADB, installed apps/permissions, home-network isolation/egress, updates and
+USB/recovery. Produce a joined threat model, findings/severity, actionable mitigations
+and verified retests. The requested device-side validation requires its own approved,
+owner-present batch and existing safety/recovery gates. Do not start that audit by
+connecting to/scanning the frame, capturing traffic, changing settings or adding
+private account data; this backlog entry authorizes none of those operations.
+
+## Rollback and recovery
+
+Record the previous good Worker version and schema compatibility before release.
+A Worker code rollback does **not** restore database contents or undo migrations.
+Prefer backward-compatible schema changes; test data recovery separately. Never
+restore an old database in a way that silently resurrects revoked credentials.
+
+If authorization fails or sensitive data is exposed, disable affected routes/access,
+revoke compromised sessions or credentials, and inspect sanitized diagnostics. Do
+not bypass authentication to restore a working-looking dashboard. Disabling access,
+rolling back cloud code and restoring data are separate scoped operations.
+
+References: [architecture](architecture.md), [security](../SECURITY.md),
+[Wrangler commands](https://developers.cloudflare.com/workers/wrangler/commands/),
+[rollback limitations](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/).

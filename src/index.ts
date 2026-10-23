@@ -1,8 +1,16 @@
-import { createDemoDashboard } from './demo';
 import { getWeatherForZip, requestZip, WeatherError } from './weather';
+import {
+  cleanupExpired,
+  getDisplaySession,
+  handleAccessRequest,
+  limitDisplayBootstrap,
+  limitDisplayWeather,
+} from './access';
+import { validOwnerConfiguration, verifyOwner } from './owner';
+import { recordDisplayCheckIn, recordDisplayWeatherArea } from './display-metadata';
 
 const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
+  'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
@@ -21,6 +29,57 @@ function json(request: Request, value: object, status = 200, extraHeaders = {}):
   });
 }
 
+function localPreview(request: Request, env: Env): boolean {
+  return (env.APP_MODE || 'preview') === 'preview' && ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(request.url).hostname);
+}
+
+function managedOrigins(env: Env): string[] {
+  const configured = env.APP_ALLOWED_ORIGINS?.trim()
+    ? env.APP_ALLOWED_ORIGINS.split(',').map((value) => value.trim())
+    : [env.APP_ORIGIN];
+  if (configured.length < 1 || configured.length > 4 || configured.some((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol !== 'https:' || url.origin !== value || url.pathname !== '/'
+        || url.search !== '' || url.hash !== '' || url.username !== '' || url.password !== '';
+    } catch {
+      return true;
+    }
+  })) return [];
+  const unique = Array.from(new Set(configured));
+  return unique.length === configured.length ? unique : [];
+}
+
+function isManagedOrigin(request: Request, env: Env): boolean {
+  try {
+    return managedOrigins(env).includes(new URL(request.url).origin);
+  } catch {
+    return false;
+  }
+}
+
+function managedConfiguration(env: Env): boolean {
+  try {
+    const url = new URL(env.APP_ORIGIN);
+    return env.APP_MODE === 'managed' && url.protocol === 'https:' && url.origin === env.APP_ORIGIN &&
+      url.pathname === '/' && !url.search && !url.hash && managedOrigins(env).includes(env.APP_ORIGIN) && Boolean(env.DB) &&
+      validOwnerConfiguration({ teamDomain: env.ACCESS_TEAM_DOMAIN, audience: env.ACCESS_AUDIENCE, email: env.OWNER_EMAIL });
+  } catch { return false; }
+}
+
+function secure(request: Request, response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+  headers.set('Cache-Control', 'no-store');
+  return new Response(request.method === 'HEAD' ? null : response.body, { status: response.status, headers });
+}
+
+async function owner(request: Request, env: Env): Promise<boolean> {
+  return verifyOwner(request, { teamDomain: env.ACCESS_TEAM_DOMAIN, audience: env.ACCESS_AUDIENCE, email: env.OWNER_EMAIL }, {
+    cache: typeof caches === 'undefined' ? undefined : caches.default,
+  });
+}
+
 /** All requests enter the Worker first; only explicitly listed static assets escape API routing. */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -31,13 +90,39 @@ export default {
       return json(request, { error: 'invalid_path' }, 400);
     }
 
-    if (path === '/api/demo' || path === '/health') {
+    if (path === '/health') {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         return json(request, { error: 'method_not_allowed' }, 405, { Allow: 'GET, HEAD' });
       }
-      return json(request, path === '/health'
-        ? { status: 'ok', mode: 'preview', authentication: 'not_implemented' }
-        : createDemoDashboard());
+      return json(request, { status: 'ok', mode: env.APP_MODE === 'managed' ? 'managed' : 'preview', authentication: managedConfiguration(env) ? 'required' : 'not_configured' });
+    }
+
+    if (path === '/api/bootstrap') {
+      if (request.method !== 'GET') return json(request, { error: 'method_not_allowed' }, 405, { Allow: 'GET' });
+      if (localPreview(request, env)) return json(request, { mode: 'preview' });
+      if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
+      if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
+      try {
+        const session = await getDisplaySession(request, env.DB);
+        if (!session) return json(request, { mode: 'managed', enrolled: false });
+        if (!await limitDisplayBootstrap(request, env.DB, session.id)) {
+          return json(request, { error: 'rate_limited' }, 429, { 'Retry-After': '60' });
+        }
+        await recordDisplayCheckIn(request, env.DB, session.id);
+        return json(request, { mode: 'managed', enrolled: true });
+      } catch { return json(request, { error: 'access_unavailable' }, 503); }
+    }
+
+    if (['/api/enrollment', '/api/admin', '/api/display'].some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+      if (env.APP_MODE === 'managed') {
+        if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
+        if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
+        const requestOrigin = new URL(request.url).origin;
+        const response = await handleAccessRequest(request, env.DB, (candidate) => owner(candidate, env), requestOrigin);
+        return secure(request, response || json(request, { error: 'not_found' }, 404));
+      }
+      if (path === '/api/display' || path.startsWith('/api/display/')) return json(request, { error: 'display_access_unavailable' }, 401);
+      return json(request, { error: 'not_implemented' }, 503);
     }
 
     if (path === '/api/weather') {
@@ -48,10 +133,23 @@ export default {
       if (origin && origin !== url.origin) return json(request, { error: 'origin_not_allowed' }, 403);
       try {
         const zipCode = await requestZip(request);
+        let displayId: string | null = null;
+        if (!localPreview(request, env)) {
+          if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
+          if (!isManagedOrigin(request, env) || origin !== url.origin) return json(request, { error: 'origin_not_allowed' }, 403);
+          const session = await getDisplaySession(request, env.DB);
+          if (!session) return json(request, { error: 'display_access_required' }, 401);
+          if (!await limitDisplayWeather(request, env.DB, session.id)) return json(request, { error: 'rate_limited' }, 429, { 'Retry-After': '60' });
+          displayId = session.id;
+        }
         const weather = await getWeatherForZip(zipCode, {
           cache: typeof caches === 'undefined' ? undefined : caches.default,
           origin: url.origin,
         });
+        if (displayId) {
+          try { await recordDisplayWeatherArea(env.DB, displayId, weather.locationLabel, weather.timeZone); }
+          catch { /* Optional admin descriptions must not hide a valid weather response. */ }
+        }
         return json(request, weather);
       } catch (error) {
         if (error instanceof WeatherError) {
@@ -62,18 +160,28 @@ export default {
       }
     }
 
-    // No cookie, query string, or forged identity header enables private access in this milestone.
-    if (path === '/api/display' || path.startsWith('/api/display/')) {
-      return json(request, { error: 'display_access_unavailable', message: 'Display authentication is not implemented.' }, 401);
+    if (path === '/admin') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return json(request, { error: 'method_not_allowed' }, 405, { Allow: 'GET, HEAD' });
+      if (!managedConfiguration(env)) return json(request, { error: 'not_implemented' }, 503);
+      if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
+      try {
+        // Reuse the API's bounded owner-verification path before serving the admin shell.
+        const requestOrigin = new URL(request.url).origin;
+        const check = new Request(new URL('/api/admin/displays', requestOrigin), { headers: request.headers });
+        const approval = await handleAccessRequest(check, env.DB, (candidate) => owner(candidate, env), requestOrigin);
+        if (!approval || approval.status !== 200) return secure(request, approval || json(request, { error: 'owner_access_required' }, 403));
+        const url = new URL('/admin.html', requestOrigin);
+        return secure(request, await env.ASSETS.fetch(new Request(url, { method: request.method })));
+      } catch { return json(request, { error: 'admin_unavailable' }, 503); }
     }
-    if (['/api/enrollment', '/api/admin', '/admin', '/auth'].some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+    if (['/admin', '/auth'].some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
       return json(request, { error: 'not_implemented' }, 503);
     }
     if (path === '/api' || path.startsWith('/api/')) {
       return json(request, { error: 'not_found' }, 404);
     }
 
-    if (!['/', '/index.html', '/styles.css', '/app.js', '/favicon.svg'].includes(path)) {
+    if (!['/', '/index.html', '/styles.css', '/app.js', '/admin.js', '/favicon.svg'].includes(path)) {
       return json(request, { error: 'not_found' }, 404);
     }
     if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -94,6 +202,19 @@ export default {
       // Never log untrusted request URLs, headers, response bodies, or runtime exception contents.
       console.error(JSON.stringify({ event: 'asset_fetch_failed' }));
       return json(request, { error: 'temporarily_unavailable' }, 503);
+    }
+  },
+
+  /**
+   * Bounded retention independent of request traffic. Expired rows are already denied
+   * by every authorization query, so this only reclaims storage.
+   */
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    if (!env.DB) return;
+    try {
+      await cleanupExpired(env.DB);
+    } catch {
+      console.error(JSON.stringify({ event: 'scheduled_cleanup_failed' }));
     }
   },
 } satisfies ExportedHandler<Env>;

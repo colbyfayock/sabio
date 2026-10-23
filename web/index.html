@@ -1,128 +1,94 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f3eee3">
-    <title>Sabio — a little more present</title>
+    <meta name="theme-color" content="#f5f4ee">
+    <meta name="referrer" content="no-referrer">
+    <title>Sabio — Horizon</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
   </head>
   <body>
-    <div class="page-shell">
-      <header class="topbar">
-        <a class="wordmark" href="/" aria-label="Sabio home">
-          <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
-            <path d="M20 3.5c2.1 8.4 8.1 14.4 16.5 16.5C28.1 22.1 22.1 28.1 20 36.5 17.9 28.1 11.9 22.1 3.5 20 11.9 17.9 17.9 11.9 20 3.5Z" fill="currentColor"/>
-            <circle cx="20" cy="20" r="3.2" fill="#f3eee3"/>
-          </svg>
-          <span>sabio<span class="wordmark-period">.</span></span>
-        </a>
-        <div class="topbar-tools">
-          <span class="demo-badge"><span class="badge-dot"></span>Preview / demo agenda</span>
-          <button class="fullscreen-button" id="fullscreen-toggle" type="button" aria-pressed="false">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4M13 3h4v4M17 13v4h-4M3 13v4h4"/></svg>
-            <span id="fullscreen-label">Enter fullscreen</span>
-          </button>
-        </div>
-      </header>
-
-      <main class="dashboard">
-        <section class="welcome-panel" aria-labelledby="welcome-title">
-          <div class="welcome-copy">
-            <p class="eyebrow"><span class="eyebrow-line"></span>A softer start to the day</p>
-            <h1 id="welcome-title">Make room<br>for <em>what matters.</em></h1>
-            <p class="welcome-caption">A small pause, before the day<br class="wide-break"> asks for everything.</p>
-          </div>
-
-          <div class="time-block">
-            <time id="clock" class="clock" aria-live="off">--:--</time>
-            <p id="date" class="date-line">Checking your local time…</p>
-          </div>
-
-          <section class="weather-card" aria-label="Live weather">
-            <div class="weather-symbol" aria-hidden="true">
-              <svg viewBox="0 0 64 64"><path d="M25 37V13a7 7 0 0 1 14 0v24a13 13 0 1 1-14 0Z"/><path d="M32 20v25M32 48a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg>
-            </div>
-            <div class="weather-main">
-              <p class="weather-label">Weather</p>
-              <p class="temperature" id="temperature">—°F</p>
-              <p class="condition" id="condition">Set ZIP to load weather</p>
-            </div>
-            <div class="weather-range" id="weather-range">H —°F · L —°F</div>
-            <div class="weather-location-row">
-              <p class="weather-location" id="weather-location">Weather location</p>
-              <button class="location-open" id="location-open" type="button">Set ZIP code</button>
-            </div>
-            <div class="weather-footer">
-              <p class="weather-status" id="weather-status" role="status" aria-live="polite">No ZIP selected.</p>
-              <button class="weather-retry" id="weather-retry" type="button">Retry weather</button>
-            </div>
+    <main class="page-shell frame">
+      <aside class="rail" aria-label="Time and weather">
+        <header class="rail-head"><h1 class="brand">sabio</h1><span class="folio">Horizon <span class="preview-label" id="display-mode">/ Checking access</span></span></header>
+        <div class="content">
+          <section aria-label="Display time">
+            <p class="eyebrow">Local time</p>
+            <p class="time"><time id="clock">--:--</time><span class="meridiem" id="meridiem"></span></p>
+            <p class="date" id="date">Loading date</p>
+            <p class="small-note" id="time-zone">Browser local time · set a ZIP</p>
           </section>
-          <p class="weather-resolved" id="weather-resolved"></p>
-          <p class="weather-note" id="demo-note">Agenda and checklist are sample content.</p>
-          <p class="location-status" id="location-status" role="status" aria-live="polite"></p>
-        </section>
-
-        <div class="right-column">
-          <section class="agenda-card" aria-labelledby="agenda-title">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">On the horizon</p>
-                <h2 id="agenda-title">Today, gently.</h2>
-              </div>
-              <span class="section-index">01 <span>/</span> DAY</span>
-            </div>
-            <p id="agenda-empty" class="empty-message">Your sample agenda will appear here.</p>
-            <ol class="event-list" id="event-list" aria-label="Sample agenda"></ol>
-          </section>
-
-          <section class="ritual-card" aria-labelledby="ritual-title">
-            <div class="ritual-heading">
-              <div>
-                <p class="eyebrow">A few good things</p>
-                <h2 id="ritual-title">Little rituals</h2>
-              </div>
-              <svg class="ritual-spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1"/></svg>
-            </div>
-            <p class="ritual-caption">Sample checklist, just for this visit. Nothing is saved.</p>
-            <ul class="task-list" id="task-list" aria-label="Sample checklist"></ul>
-            <p class="task-empty" id="task-empty">Sample checklist is loading.</p>
+          <div class="divider"></div>
+          <section aria-label="Live weather">
+            <p class="weather-label">Weather</p>
+            <div class="weather-main"><span class="temperature" id="temperature">—°F</span><div><div class="condition" id="condition">Set ZIP to load weather</div><div class="high-low" id="weather-range">H —°F · L —°F</div></div></div>
+            <div class="location-row"><span class="zip-label" id="weather-location">Weather location</span><button class="text-button" id="location-open" type="button">Set ZIP code</button></div>
+            <p class="small-note" id="weather-resolved"></p>
+            <div class="weather-footer"><p class="small-note" id="weather-status" role="status" aria-live="polite">No ZIP selected.</p><button class="text-button" id="weather-retry" type="button">Retry weather</button></div>
+            <p class="small-note" id="location-status" role="status" aria-live="polite"></p>
           </section>
         </div>
-      </main>
-
-      <footer class="bottom-bar">
-        <div class="connection-status" aria-live="polite">
-          <span class="status-dot" id="status-dot"></span>
-          <span id="status-text">Waiting for sample data…</span>
-          <span class="status-detail" id="status-detail"></span>
-        </div>
-        <div class="footer-actions">
-          <button class="retry-button" id="retry-button" type="button">Retry now</button>
-          <span class="pairing-note">Agenda and checklist are previews.</span>
-          <span class="weather-attribution">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · Geocoding by <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span>
-        </div>
-      </footer>
-      <p class="fullscreen-message" id="fullscreen-message" role="status" aria-live="polite"></p>
+        <footer class="rail-foot">
+          <div class="theme-row"><label for="themeMode">Appearance</label><select id="themeMode"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+          <p class="small-note">Auto: light 7 a.m.–7 p.m. in the displayed timezone.</p>
+          <p class="small-note" id="appearance-status" role="status"></p>
+          <button class="text-button" id="fullscreen-toggle" type="button" aria-pressed="false"><span id="fullscreen-label">Enter fullscreen</span></button>
+          <p class="small-note" id="fullscreen-message" role="status"></p>
+          <p class="attribution">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></p>
+        </footer>
+      </aside>
+      <section class="scene" aria-label="Photo slideshow">
+        <img class="photo" id="photoA" alt="" aria-hidden="true" referrerpolicy="no-referrer" decoding="async">
+        <img class="photo" id="photoB" alt="" aria-hidden="true" referrerpolicy="no-referrer" decoding="async">
+        <div class="photo-fallback" id="photo-fallback">A little room to look.<br><span>Loading photographs…</span></div>
+        <p class="photo-status" id="photo-status" role="status" aria-live="polite"></p>
+        <nav class="scene-controls" aria-label="Photo controls">
+          <button class="control" id="photo-open" type="button">Photo source</button>
+          <button class="control" id="pause-photos" type="button" aria-pressed="false">Pause</button>
+          <button class="control" id="next-photo" type="button">Next</button>
+        </nav>
+        <div class="credit" id="photo-credit">Sample photography via Unsplash</div>
+      </section>
+    </main>
+    <div class="dialog-shade" id="access-dialog" role="dialog" aria-modal="true" aria-labelledby="access-title" hidden>
+      <section class="dialog">
+        <h2 id="access-title">A place for this display.</h2>
+        <p id="access-status" role="status">Checking browser approval…</p>
+        <p class="pairing-code" id="access-code" role="status" aria-label="Pairing code"></p>
+        <button class="text-button" id="access-start" type="button">Request approval code</button>
+        <p>Approve from <strong>/admin</strong> on your trusted browser. This approves a browser session, not the physical hardware.</p>
+      </section>
     </div>
-    <div class="location-overlay" id="location-dialog" role="dialog" aria-modal="true" aria-labelledby="location-dialog-title" aria-describedby="location-description" hidden>
-      <section class="location-panel">
-        <p class="eyebrow">A small detail</p>
-        <h2 id="location-dialog-title">Set your ZIP code</h2>
-        <p id="location-description" class="location-description">The first five digits go to this server and Open-Meteo for weather. The ZIP+4 extension stays in this browser.</p>
+    <div class="dialog-shade" id="location-dialog" role="dialog" aria-modal="true" aria-labelledby="location-dialog-title" aria-describedby="location-description" hidden>
+      <section class="dialog">
+        <h2 id="location-dialog-title">Display location</h2>
+        <p id="location-description">The first five digits go to this server and Open-Meteo for weather and timezone. The ZIP+4 extension stays in this browser.</p>
         <form id="location-form" novalidate>
-          <label class="location-field-label" for="location-input">US ZIP code</label>
-          <input id="location-input" type="text" inputmode="numeric" maxlength="10" autocomplete="off" spellcheck="false" placeholder="e.g. 00000" aria-describedby="location-input-hint location-error">
-          <p class="location-input-hint" id="location-input-hint">Enter 5 digits or ZIP+4 (00000-0000). US ZIP codes only. The ZIP+4 extension stays in this browser.</p>
-          <p class="location-error" id="location-error" role="alert" aria-live="assertive" hidden></p>
-          <div class="location-dialog-actions">
-            <button class="location-reset" id="location-reset" type="button" hidden>Reset ZIP code</button>
-            <span class="location-action-spacer"></span>
-            <button class="location-cancel" id="location-cancel" type="button">Cancel</button>
-            <button class="location-save" id="location-save" type="submit">Save</button>
+          <label for="location-input">US ZIP code</label>
+          <input id="location-input" type="text" inputmode="numeric" maxlength="10" autocomplete="off" spellcheck="false" placeholder="00000 or 00000-0000" aria-describedby="location-error">
+          <p class="dialog-error" id="location-error" role="alert" hidden></p>
+          <div class="dialog-actions">
+            <button class="text-button" id="location-reset" type="button" hidden>Reset ZIP code</button>
+            <button class="text-button" id="location-cancel" type="button">Cancel</button>
+            <button class="text-button" id="location-save" type="submit">Save</button>
           </div>
+        </form>
+      </section>
+    </div>
+    <div class="dialog-shade" id="photo-dialog" role="dialog" aria-modal="true" aria-labelledby="photo-title" aria-describedby="photo-description" hidden>
+      <section class="dialog photo-dialog">
+        <h2 id="photo-title">A view of your choosing.</h2>
+        <p id="photo-description">Use 1–12 public HTTPS image URLs, one per line. Images load directly from their hosts, which receive ordinary network metadata. Do not use private links, access tokens, or credentials. Settings stay in this browser; this is not a private upload service.</p>
+        <form id="photo-form" novalidate>
+          <label for="photo-urls">Image URLs</label>
+          <textarea id="photo-urls" rows="5" maxlength="26000" autocomplete="off" spellcheck="false" aria-describedby="photo-description photo-error"></textarea>
+          <label for="photo-hold">Hold each photo (seconds)</label>
+          <input id="photo-hold" type="number" min="10" max="3600" step="1" value="20" aria-describedby="photo-error">
+          <p class="dialog-error" id="photo-error" role="alert"></p>
+          <div class="dialog-actions"><button class="text-button" id="photo-samples" type="button">Use samples</button><button class="text-button" id="photo-cancel" type="button">Cancel</button><button class="text-button" type="submit">Save</button></div>
         </form>
       </section>
     </div>

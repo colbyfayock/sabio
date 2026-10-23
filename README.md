@@ -1,15 +1,19 @@
 # Sabio
 
 An owner-controlled, intelligent dashboard for photo frames and other approved
-displays. The name is Brazilian-inspired, from Portuguese *sábio* (wise).
+displays.
 
 ## Status
 
-The executable **LOCAL PREVIEW** serves synthetic agenda/checklist data and live
-public weather when a US ZIP is selected. Weather uses an unauthenticated public
-endpoint; this does not implement pairing, authentication, or a private-data path.
-Do not put personal account data or credentials into the app, even if Wrangler is
-authenticated locally.
+The executable **LOCAL PREVIEW** uses the Horizon layout: time and live Fahrenheit
+weather in a left sidebar, with one large photograph on the right. Set a US ZIP for
+weather and timezone; configure public image URLs for the slideshow. There is no
+calendar, agenda, or checklist. The default preview only enables weather/bootstrap
+on loopback. An owner-managed Cloudflare deployment now uses a real Access application,
+D1 database and managed Worker. Public-shell, unapproved-browser denial, Access login
+redirect and pending-enrollment checks passed against that deployment. Signed-in owner
+approval, live authorized weather and revocation still need production verification;
+the frame has not been tested. Do not put private account data or credentials into the app.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
 The application should also support approved modern browsers. The old frame remains
@@ -49,8 +53,8 @@ pairing code for the administrator to approve, then receives a limited, revocabl
 browser session. Approval identifies a browser credential, **not cryptographic
 proof of a physical device**. Main provider credentials never belong on the frame.
 
-See [architecture](docs/architecture.md) for the implemented local preview boundary and
-future trust boundaries, and [security](SECURITY.md) for reporting guidance.
+See [architecture](docs/architecture.md), [access control](docs/access-control.md),
+and [security](SECURITY.md) for implementation boundaries and reporting guidance.
 
 ## Free-tier target
 
@@ -64,8 +68,9 @@ also matter; remaining on the free tier is a target, not an unlimited-use guaran
 - [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/)
 
 Stay on the Free plan unless the owner explicitly approves otherwise. API providers
-and optional domain registration may have separate costs. No Cloudflare resources
-or billing changes have been made for this project.
+and optional domain registration may have separate costs. The owner-approved initial
+deployment created one Worker, one D1 database, one admin-only Access application and
+one reusable owner policy. No paid upgrade or billing change was made by the deployment.
 
 ## Development direction
 
@@ -77,7 +82,7 @@ or billing changes have been made for this project.
 
 ### Local CLI setup
 
-Use Node.js 22 or newer and the pinned pnpm 10.23.0. From this repository:
+Use Node.js 22.13 or newer and the pinned pnpm 10.23.0. From this repository:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -96,9 +101,10 @@ WRANGLER_SEND_METRICS=false pnpm wrangler whoami
 ```
 
 `whoami` can print account/email identifiers; keep its output private. Wrangler login
-is managed locally. Account authentication does not authorize deployment or resource creation.
-There is no direct deploy script or approval for remote deployment, resource creation,
-or billing changes. `pnpm build:worker` is a local packaging dry run, not a deployment.
+is managed locally. Account authentication does not itself authorize cloud changes.
+There is no automatic public-repo deployment script; owner-local production configuration
+is kept under ignored `private/` storage. `pnpm build:worker` remains a local packaging
+dry run, not a deployment. Additional cloud changes still require an agreed scope.
 
 ## Local development
 
@@ -115,16 +121,88 @@ pnpm dev
 # Open http://127.0.0.1:8787 on this computer.
 ```
 
-The preview uses the browser-local clock and synthetic agenda/checklist content.
-`/api/demo` supplies those data; `/health` is public. Agenda polling uses a 60-second
-interval, 12-second timeout, and backoff up to five minutes; checkbox state is
-in-memory only. Weather loads independently through `POST /api/weather` when a ZIP is
+The clock uses browser-local time until a weather response supplies the selected
+ZIP's validated IANA timezone. The UI labels this fallback explicitly; after a
+successful lookup, the clock, date, and automatic theme use that timezone, including
+daylight saving time. A failed refresh for the same ZIP retains the resolved timezone;
+changing/resetting the ZIP clears it. The timezone is currently in memory: an offline
+reload falls back to labeled browser time until a lookup succeeds again.
+
+`/health` is public and identifies this as a preview without authentication.
+The old `/api/demo` endpoint has been removed. Weather loads through `POST /api/weather` when a ZIP is
 saved, refreshes every 10 minutes, and retries with backoff up to 30 minutes. It has
 its own 12-second browser timeout, shows timestamps/stale status, and does not fall
-back to sample weather. `/api/display` returns 401 regardless of fake cookies,
-enrollment/admin/auth routes return 503, and other API or static misses return 404
-before asset fallback. The public weather endpoint is not an authorization boundary;
-do not treat any route as protecting personal data.
+back to sample weather. In preview, `/api/display` returns 401 and enrollment/admin
+remain unavailable. Preview bootstrap/weather refuse non-loopback origins. Managed
+mode requires complete origin/owner configuration and D1; valid display sessions
+are required for weather, with server-side revocation and abuse limits. Unknown
+API/static routes return 404 before asset fallback. The managed path is locally
+tested, not a claim of deployed security or approval for private integrations.
+
+### Local access-control testing
+
+The checked-in D1 ID is an all-zero **local placeholder**, not a provisioned database.
+`remote: false` selects local development storage; it is not a deployment guard by
+itself. `APP_MODE=preview`, empty owner variables, disabled public preview URLs and
+non-loopback preview denial keep the checked-in app unconfigured for public use.
+
+```sh
+pnpm db:migrate:local
+pnpm check
+```
+
+The migration command explicitly targets local state. Tests also run the actual
+schema against SQLite and isolated, nonpersistent local D1 with remote bindings
+disabled. No test calls Cloudflare account APIs or needs a real owner login.
+See [access control](docs/access-control.md) before configuring managed mode.
+
+### Photos and appearance
+
+- **Photo source** accepts 1–12 public HTTPS image URLs, one per line, and a whole-number
+  hold of 10–3600 seconds. The default is 20 seconds plus a 1.2-second transition.
+  **Use samples** fills the editor with the built-in Unsplash images; Save applies it.
+- Photo URLs and hold duration are stored only in this browser under `sabio.photos.v1`.
+  These are not private URLs or secrets: hosts receive direct image requests and ordinary
+  network metadata. Referrers are suppressed. There is no server-side image proxy,
+  file upload, cloud-album sync, or authenticated remote settings service.
+- Use reasonably sized JPEGs (about 1200 pixels wide) for the frame. Source count and
+  URL length are bounded, but image host availability and decoded image size are not
+  controlled by Sabio. HTTPS/no-login/local-address checks are syntax checks, not a
+  guarantee about DNS or redirects. Do not use sensitive links or access tokens.
+- Two image layers preload a replacement before fading. Failed images are skipped;
+  if every source fails, the last good image remains and retries are bounded. Pause
+  stops automatic rotation, Next advances manually, and hidden pages stop rotation.
+  Reduced-motion users get immediate transitions. Pause state is visit-only.
+- **Appearance** saves Auto/Light/Dark under `sabio.appearance.v1`. Auto is light
+  07:00–18:59 and dark 19:00–06:59 in the displayed timezone, not sunrise/sunset.
+- Blocked browser storage produces visible visit-only notices instead of breaking
+  the dashboard. Settings do not sync between browsers. Fullscreen requires a gesture.
+
+### Owner display details
+
+The protected owner session list lets the owner assign an optional display name, such
+as “Living room frame”. The name is only an organizational label—not identity,
+authentication or device attestation. It is stored on that display's D1 record; clear
+the field to remove it. Names are limited to 80 characters, reject markup/control
+characters, and are rendered as plain text. Revoked sessions remain in a collapsed
+**Show revoked sessions** history until normal expiration; they show a revocation time
+and have no active rename/revoke controls.
+
+The session list also shows an approximate device category, parsed browser/OS version,
+and last check-in. Those labels come from the User-Agent header, can be spoofed, and
+are not hardware identity or an authorization factor; the raw header, IP address,
+model and serial are not stored. Check-in details update at most every five minutes.
+
+After a successful managed weather lookup, Sabio stores the last resolved city/region,
+timezone and timestamp on that display's D1 record for the owner list. It does not store
+the submitted ZIP, forecast coordinates, GPS or IP-derived location for this purpose.
+The value is a **last weather area**, not a physical/current-location claim, and remains
+as historical context after ZIP reset or failed weather lookups. It expires with the
+  display record. Only the authenticated owner admin list can read it; it is not returned
+  to displays as extra metadata. Treat this as location-related owner data. These fields
+  are now deployed in D1 migration 0002; existing browsers populate them on their next
+  managed bootstrap and successful weather lookup without re-pairing. Display names
+  are now deployed in additive migration 0003.
 
 ### Weather ZIP code
 
@@ -159,25 +237,51 @@ explicitly saving replaces the owned record with the ZIP schema, and Reset remov
 
 ### Validation status
 
-- Node tests cover routing/denial, response policy, weather provider/request/cache
-  validation, payload validation, text-only
-  rendering, poll backoff/timeouts/offline recovery, in-memory tasks, and fullscreen
-  state/error handling. These are unit tests, not old-browser emulation.
+- Node tests cover owner JWT signature/claims, original-browser pairing, one-time
+  consumption, expiry, revocation, CSRF, rate limits, routing/denial, response policy, weather provider/request/cache
+  and timezone validation, text-only rendering, weather backoff/timeouts/offline
+  recovery, photo preferences/loading/races/retries, timezone/DST/theme boundaries,
+  and fullscreen state/error handling. Cleanup regression tests assert that invalid
+  display/pending credentials and rejected enrollment attempts trigger no cleanup
+  batches, and that cleanup and bootstrap-polling stay bounded. These are unit tests,
+  not old-browser emulation.
 - ZIP tests cover ZIP5/ZIP+4 syntax, leading zeros, old city-record handling, storage
   errors, persistence across refresh, cancel/reset/focus, and the location request flow.
 - Actual local `workerd` smoke checks passed for asset/API/error routes, including a
   live weather response for a public reference ZIP (not an owner's location).
-- Local Chromium checks passed for 1280×800 layout, fullscreen entry/exit, checklist
-  preservation after refresh, failed-refresh data retention, and a 390-pixel layout.
-- Automated desktop accessibility checks reported zero violations and no incomplete
-  checks after contrast fixes. This is not a complete accessibility certification.
-- The location dialog was checked on desktop and a 320-pixel viewport, including
-  fullscreen, Enter/Escape, focus isolation/restoration, and save/reset persistence.
-  Its automated check reports no violations; an overlay contrast check remains manual
-  (the input hint's computed foreground/background ratio is approximately 4.96:1).
-- No remote deployment or new frame/Firefox-68 hardware test has been performed.
+- Horizon was checked in local Chromium at 1280×800 in both themes and at 390 pixels.
+  Browser checks cover sample image loading, pause/next, URL validation, photo settings
+  across reload, focus restoration, ZIP entry, and mocked weather/timezone rendering.
+  Axe checks report zero violations for both themes, the photo dialog, mock admin UI
+  and approval gate; the gate has one manual contrast incomplete. This is not a
+  complete accessibility certification or evidence of old-browser compatibility.
+- Initial managed deployment checks passed for HTTPS shell/headers, bootstrap denial,
+  forged-session rejection, protected admin redirects, CSRF rejection, pending enrollment
+  and private-file/static-fallback denial. A real browser saw the approval gate before
+  any photos/weather loaded. Owner-login completion and frame/Firefox-68 validation
+  remain unverified; local auth tests do not substitute for those checks.
+- Local D1 migration/test coverage and metadata unit/Worker integration tests cover
+  coarse device labels, 5-minute update limits, weather-area timestamping, and excluding
+  ZIPs/coordinates/raw User-Agent from stored/displayed details. Metadata feature has
+  not yet been migrated/deployed to the production database.
+- Admin sessions now show a coarse browser/OS/device-category heuristic updated on
+  bootstrap at most every five minutes, and the last city/region successfully resolved
+  for weather with its IANA timezone and resolution time. No raw User-Agent, model,
+  serial, IP geolocation, GPS, ZIP, or coordinates are stored for these descriptions.
+  UA labels are spoofable; they are not identity or device attestation. The last weather
+  area is retained as a historical last-resolved value (for example, after ZIP reset)
+  so the admin does not imply it is the device's physical/current location. Visible note
+  on admin clarifies this. This adds browser-category and approximate location metadata
+  to D1, not private photo or account data.
+- A coordinated, comprehensive security review of the Sabio service/deployment and
+  frame/device OS, root ADB, browser, network, recovery and data-handling boundaries is
+  backlog work. It has not been completed and these functional tests are not that audit.
 - `pnpm build:worker` packages successfully without upload. GitHub Actions runs the
   install/check/dry-run sequence without Cloudflare credentials or deployment steps.
+
+See the [release runbook](docs/releasing.md) for the remaining production gates.
+The requested comprehensive Sabio-plus-frame security audit is backlog work and has
+not been completed; see the [access-control/security boundary notes](docs/access-control.md).
 
 ## License
 

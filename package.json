@@ -7,15 +7,16 @@
   "type": "module",
   "packageManager": "pnpm@10.23.0",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "wrangler": "wrangler",
-    "types": "wrangler types",
+    "types": "wrangler types --strict-vars=false",
     "typecheck": "pnpm types && tsc -p tsconfig.json && tsc -p tsconfig.web.json",
     "build": "node scripts/build.mjs",
     "dev": "pnpm build && wrangler dev --local --ip 127.0.0.1 --inspector-ip 127.0.0.1",
     "test": "node --test tests/*.test.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "check": "pnpm typecheck && pnpm build && pnpm test",
     "build:worker": "pnpm build && wrangler deploy --dry-run --outdir build/worker"
   },
@@ -30,5 +31,8 @@
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
     "wrangler": "4.151.3"
+  },
+  "dependencies": {
+    "jose": "6.2.13"
   }
 }

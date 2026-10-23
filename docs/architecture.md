@@ -1,24 +1,34 @@
 # Architecture and implementation direction
 
-Status: **LOCAL PREVIEW** implemented with live public Fahrenheit weather and
-synthetic agenda/checklist data. Authorization and private-integration architecture
-below is proposed design, not an implemented security guarantee. No remote deployment
-is authorized or implied.
+Status: **LOCAL PREVIEW** implemented with the selected left-sidebar Horizon UI,
+live public Fahrenheit weather/timezone and browser-local slideshow configuration.
+Managed owner verification, enrollment, sessions and revocation are implemented and
+locally tested. The checked-in default stays unconfigured. A separate owner-approved
+managed deployment now has real Access/D1 resources and passed denial/redirect/pending
+checks, but signed-in owner flows and hardware still need validation. Private
+integrations remain future work; this is not standing authorization for more cloud changes.
 
 ## Current local implementation
 
 Wrangler runs the Worker before asset handling (`run_worker_first`); there is no SPA
-fallback. The Worker exposes synthetic JSON at public `/api/demo`, public `/health`,
-and public unauthenticated `POST /api/weather`. `/api/display` returns 401 independently
-of fake cookies. `/api/enrollment`, `/api/admin`, `/admin`, and `/auth` subpaths return
-503. Unknown API and static paths return 404 before the asset binding. The public
-static allowlist is HTML, CSS, app JavaScript, and favicon. There are no private-data,
-storage, or credential bindings.
+fallback. The Worker exposes public `/health` and `POST /api/weather`, which is
+unauthenticated only in the loopback preview. `/api/demo` has been removed. In default preview, bootstrap and
+weather are loopback-only; `/api/display` denies access and enrollment/admin remain
+unavailable. In configured managed mode, D1-backed enrollment/session/revocation and
+signed owner JWT verification protect the APIs. Unknown API/static paths return 404
+before the asset binding. Public assets are the display shell, CSS, app/admin JS and
+favicon; `/admin` serves its shell only after owner verification, and direct
+`/admin.html` requests are denied. The D1 binding is a local all-zero placeholder,
+not a cloud resource. Owner/origin variables are empty by default. The separate real
+production config stays ignored under `private/`, with only the six allowlisted
+static assets uploaded; no source maps or private setup credentials are deployed.
 
 The IIFE frontend targets Firefox 68 at build time but is not validated on actual
-Firefox 68 hardware. It shows synthetic agenda/checklist data using the browser-local
-clock; checkbox state is in memory. Agenda polls every 60 seconds with a 12-second
-timeout and backoff up to five minutes. Weather loads independently and refreshes
+Firefox 68 hardware. Horizon places time/weather in the left 38% and a single
+photograph in the right 62%. The clock/date and automatic theme use the ZIP-derived
+IANA timezone from the weather response; browser-local fallback is labeled while
+unresolved. The timezone remains in memory, not persistent offline state.
+There is no agenda/checklist UI or background demo polling. Weather refreshes
 every 10 minutes, with a 12-second timeout and backoff up to 30 minutes. The UI shows
 timestamps and stale status, clears old data on ZIP change/reset, and has no sample
 weather fallback. Fullscreen requires a user gesture. No new real-hardware test was
@@ -30,8 +40,9 @@ validated as text to preserve leading zeros, not verified against a postal datab
 The browser sends only the first five digits using JSON body `{ zipCode: ZIP5 }` to
 `POST /api/weather`; location values in the query string are rejected. The endpoint
 requires POST, JSON content type, exactly one string property, and same-origin requests
-when an Origin header is present. It has bounded request bodies and no cookies,
-authentication, calendar access, or private-user records.
+when an Origin header is present. It has bounded request bodies. Managed mode also
+requires the exact Origin, an approved display cookie and a D1 rate budget; preview
+omits credentials. There is no calendar access or private weather-provider account.
 
 The Worker geocodes with Open-Meteo, accepts only an exact returned postcode and US
 country code, and then requests current conditions and daily high/low with
@@ -42,14 +53,17 @@ include ZIP, coordinates, or provider URLs. Outbound traces are disabled to avoi
 exporting provider query URLs; production redaction and observability require review.
 
 Open-Meteo receives ZIP5 for geocoding and the resolved coordinates for forecast
-requests and ordinary network metadata. Local development requests originate from
+requests and ordinary network metadata. The returned forecast includes a bounded,
+Intl-validated IANA `timeZone`; missing/invalid provider or cached zones fail closed.
+The public weather cache uses version 2, rejecting older payloads without a timezone.
+Local development requests originate from
 the Mac; cloud hosting is not a promise of anonymity. Its terms state that
 coordinates may be retained in provider logs for up to 90 days:
 [Open-Meteo terms](https://open-meteo.com/en/terms). A best-effort public Cache API
 stores forecasts for 10 minutes under SHA-256-derived area keys; those hashes are
 not anonymous or secret. Cache behavior/availability can vary by data center and local
-runtime and is not guaranteed. This route does not use cookies, D1, or provision
-resources. Open-Meteo's free API is non-commercial only, with published limits of
+runtime and is not guaranteed. The public forecast cache is separate from managed
+session/rate-limit records in D1. No route provisions resources. Open-Meteo's free API is non-commercial only, with published limits of
 10,000/day, 5,000/hour, and 600/minute. Commercial use needs an appropriate paid plan
 and explicit approval. No API key is used. Open-Meteo data is CC BY 4.0; GeoNames
 attribution is shown in the UI.
@@ -60,13 +74,35 @@ in-memory state with a visible warning. The entered ZIP+4 preference is not stor
 a server-side user setting; the public forecast cache is separate. This is not an
 authenticated preference or protected identity. Trusted per-display settings remain future work.
 
+Photo preferences (`sabio.photos.v1`) store 1–12 public HTTPS URLs and a bounded
+hold duration locally. Images are requested directly by the browser with no referrer;
+the Worker never fetches user-supplied photo URLs. The CSP allows HTTPS images but
+keeps scripts/styles/API connections same-origin. URL checks do not guarantee public
+DNS resolution or safe redirects, nor constrain decoded image memory. Use small JPEGs,
+not sensitive URLs or token-bearing links. No uploads or private album integration.
+Two image layers use generation-scoped load/fade callbacks, 15-second load timeouts,
+bounded source attempts and delayed retries. Last good photos remain on load errors.
+Photo hold, source list and appearance persist; pause is visit-only. Auto appearance
+uses 07:00–19:00 in the displayed timezone. Hidden pages stop photo rotation.
+
+Managed bootstrap check-ins update a coarse browser/OS/device-category label derived
+from the untrusted User-Agent, at most once per five minutes; raw strings, IPs, model
+names and serials are not stored. On a successful managed weather response, D1 stores
+the display's last resolved city/region, timezone and timestamp (not ZIP/coordinates/
+GPS). It remains historical after reset or failed lookups, and admin labels it as the
+last weather area. These approximate descriptions do not identify or attest hardware.
+The owner-editable display name is bounded to 80 characters, rendered as plain text,
+and never an identity factor. Additive migrations `0002_display_details.sql` and
+`0003_display_names.sql` are deployed.
+
 Local workflow: `pnpm install --frozen-lockfile`; `pnpm check` generates ignored
 environment types, typechecks Worker and frontend, builds, and runs Node unit tests.
 `pnpm dev` builds then starts Wrangler locally at `127.0.0.1:8787`. Frontend edits
 require another `pnpm build`; Wrangler handles Worker edits. `pnpm build:worker` is a
 local deploy dry run/package only. The build refuses unexpected `dist` files rather
-than removing unknown work. There is no direct deploy script; remote deployment,
-resource creation, and billing changes are not authorized. Wrangler authentication
+than removing unknown work. There is no automatic public-repo deploy script; the
+initial remote setup/deployment was explicitly owner-approved. Further resource or
+billing changes are not authorized by this document. Wrangler authentication
 is managed locally, and `whoami` output is private; account authentication does not
 authorize deployment. Never send private data to this public mock, even after CLI login.
 
@@ -104,31 +140,34 @@ Do not move its diagnostics, private records, or compatibility fixture into Sabi
 - Is not an arbitrary URL proxy. Restrict integration destinations and guard redirects,
   request volume, parsing and payload size. Untrusted strings must not become markup.
 
-The implemented weather route is an unauthenticated public-data exception, not a
-private-data route or security approval. Before any deployment, agree authentication
-and rate/abuse boundaries and review production observability. This endpoint processes
-location data and does not authorize access to, or deployment on, a frame.
+Preview weather is a loopback-only public-data exception, not a private-data route or
+security approval. Managed weather requires a valid display session and rate budget.
+Before deployment, verify the real Access policy, D1/origin configuration, abuse
+boundaries and production observability. Location processing is not authorization
+to deploy onto or operate a frame.
 
 ### Storage
 
-- D1 is the initial candidate for display registrations, bounded enrollment state,
+- The local D1 schema implements display registrations, bounded enrollment state,
   hashed high-entropy session credentials, revocation and non-secret configuration.
-- Resolve schema, consistency and atomic one-time enrollment consumption before
-  coding. Minimize stored personal data and define retention/deletion behavior.
+- The tested schema uses atomic batches for one-time approval and consumption,
+  and bounded expiry cleanup that is admitted-only plus a scheduled 15-minute trigger.
+  Validate production consistency, cron deployment and retention before
+  enabling it. Browser-local photo/location/appearance settings do not yet sync to D1.
 - Avoid Workers KV as the sole authority for immediate revocation/one-time pairing:
   its eventual consistency needs explicit treatment, not assumptions.
 - Cache public weather separately from private calendar/display responses. No
   cross-user shared-cache leaks. Do not log cookies, codes, auth headers, tokens,
   calendar contents or raw upstream responses.
 
-## Proposed enrollment flow
+## Enrollment flow (implemented locally, not configured in Cloudflare)
 
 1. A new browser obtains a short-lived pending enrollment and displays a pairing code.
    It must also hold a separate unguessable enrollment credential; the display code
    alone must not let a different browser claim an approved session.
 2. The owner authenticates on a trusted modern device and approves that exact request.
-   Cloudflare Access is a candidate for admin authentication, not a proven integration.
-   Verify its signed identity token server-side and restrict the actual administrator.
+    Cloudflare Access JWT verification is implemented server-side with the configured
+    issuer, audience and owner identity. Actual Access policies/login remain unverified.
 3. The original pending browser completes enrollment exactly once. Use high-entropy
    random credentials, hashed storage, explicit expiry, attempt limits, request
    throttling and atomic state changes; do not exchange secrets in URL query strings.
@@ -136,7 +175,8 @@ location data and does not authorize access to, or deployment on, a frame.
    and CSRF protection for enrollment/admin state changes. Check validity, expiry,
    revocation and assigned display scope on every private-data request.
 5. The owner can list/revoke individual display sessions. Set finite lifetimes and
-   decide renewal/rotation rules before claiming unattended operation.
+    use the current finite 30-day lifetime; expiry requires pairing again rather than
+    silent renewal. See [access control](access-control.md) for code and release gaps.
 
 This approves **a browser credential**, not a physical device. A copied credential
 can impersonate its browser, especially on a root-accessible frame. MAC addresses,
@@ -174,7 +214,9 @@ Handle quota exhaustion safely. No paid services or billing changes without appr
    Test default/custom/preview hosts so no alternate route exposes private data.
 4. **Public weather hardening/deployment review:** agree on auth and rate/abuse
    boundaries, production observability/redaction, and provider plan suitability before
-   any deployment. The current local route is unauthenticated and no deployment is authorized.
+   any deployment. Only the loopback preview route is unauthenticated; managed-mode
+   controls still need signed-in owner/deployment verification. The initial deployment
+   was owner-approved; this document grants no standing deployment authorization.
 5. **Private integrations:** agree on minimal displayed fields, data retention,
    OAuth/token handling and additional security requirements first.
 

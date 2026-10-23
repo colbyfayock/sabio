@@ -10,13 +10,17 @@ test('every request runs through Worker routing without an SPA fallback', () => 
   assert.equal(config.assets.not_found_handling, '404-page');
 });
 
-test('local preview uses loopback and config has no provisioned or remote data bindings', () => {
+test('local preview uses loopback with a local-only D1 placeholder, empty identity config and no provisioned resources', () => {
   assert.equal(config.dev.ip, '127.0.0.1');
   assert.equal(config.dev.local_protocol, 'http');
   assert.equal(config.workers_dev, false);
   assert.equal(config.preview_urls, false);
   assert.equal(config.send_metrics, false);
-  for (const name of ['d1_databases', 'kv_namespaces', 'r2_buckets', 'services', 'vars', 'routes', 'account_id']) {
+  assert.deepEqual(config.vars, { APP_MODE: 'preview', APP_ORIGIN: '', APP_ALLOWED_ORIGINS: '', ACCESS_TEAM_DOMAIN: '', ACCESS_AUDIENCE: '', OWNER_EMAIL: '' });
+  assert.equal(config.d1_databases.length, 1);
+  assert.equal(config.d1_databases[0].database_id, '00000000-0000-0000-0000-000000000000');
+  assert.equal(config.d1_databases[0].remote, false);
+  for (const name of ['kv_namespaces', 'r2_buckets', 'services', 'routes', 'account_id']) {
     assert.equal(config[name], undefined);
   }
 });

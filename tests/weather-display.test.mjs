@@ -21,7 +21,7 @@ class Element {
 function validForecast(overrides = {}) {
   const now = new Date().toISOString();
   return {
-    mode: 'live', unit: 'fahrenheit', locationLabel: 'North End',
+    mode: 'live', unit: 'fahrenheit', locationLabel: 'North End', timeZone: 'America/New_York',
     temperatureFahrenheit: 68, highFahrenheit: 72, lowFahrenheit: 54,
     condition: 'Light rain', observedAt: now, fetchedAt: now, ...overrides,
   };

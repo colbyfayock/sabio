@@ -29,27 +29,15 @@ function assets() {
   };
 }
 
-test('public demo is explicitly synthetic and does not require credentials', async () => {
+test('health is explicitly a preview and does not imply authentication', async () => {
   const { env, requests } = assets();
-  const response = await worker.fetch(new Request('https://example.com/api/demo'), env);
+  const response = await worker.fetch(new Request('https://example.com/health'), env);
   assert.equal(response.status, 200);
   const data = await response.json();
-  assert.equal(data.mode, 'demo');
-  assert.equal(data.weather, undefined);
-  assert.equal(data.events.length, 3);
-  assert.equal(data.tasks.length, 3);
-  assert.ok(Number.isFinite(Date.parse(data.updatedAt)));
+  assert.deepEqual(data, { status: 'ok', mode: 'preview', authentication: 'not_configured' });
   assert.equal(requests.length, 0);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.equal(response.headers.get('Set-Cookie'), null);
-});
-
-test('fixtures do not share mutable objects across responses', async () => {
-  const { env } = assets();
-  const first = await (await worker.fetch(new Request('https://example.com/api/demo'), env)).json();
-  first.tasks[0].title = 'Changed by a caller';
-  const second = await (await worker.fetch(new Request('https://example.com/api/demo'), env)).json();
-  assert.equal(second.tasks[0].title, 'Water the plants');
 });
 
 test('private display data is denied on any host regardless of claimed identity', async () => {
@@ -68,13 +56,13 @@ test('private display data is denied on any host regardless of claimed identity'
   assert.equal(requests.length, 0);
 });
 
-test('enrollment and admin endpoints never pretend successful authentication', async () => {
+test('preview enrollment and admin endpoints deny instead of pretending successful authentication', async () => {
   const { env, requests } = assets();
   for (const path of ['/api/enrollment', '/api/enrollment/approve', '/api/admin', '/admin', '/auth/callback']) {
     for (const method of ['GET', 'POST', 'OPTIONS']) {
       const response = await worker.fetch(new Request(`https://example.com${path}`, { method }), env);
-      assert.equal(response.status, 503);
-      assert.equal((await response.json()).error, 'not_implemented');
+      assert.equal(response.status, path === '/admin' && method !== 'GET' ? 405 : 503);
+      assert.equal((await response.json()).error, path === '/admin' && method !== 'GET' ? 'method_not_allowed' : 'not_implemented');
       assert.equal(response.headers.get('Set-Cookie'), null);
     }
   }
@@ -83,7 +71,7 @@ test('enrollment and admin endpoints never pretend successful authentication', a
 
 test('unknown APIs and files do not fall through to HTML or an asset binding', async () => {
   const { env, requests } = assets();
-  for (const path of ['/api', '/api/unknown', '/.env', '/worker-configuration.d.ts', '/src/index.ts', '/anything', '/.weather-cache/v1/synthetic']) {
+  for (const path of ['/api', '/api/demo', '/api/unknown', '/.env', '/worker-configuration.d.ts', '/src/index.ts', '/anything', '/.weather-cache/v1/synthetic', '/.weather-cache/v2/synthetic']) {
     const response = await worker.fetch(new Request(`https://example.com${path}`), env);
     assert.equal(response.status, 404);
     assert.equal((await response.json()).error, 'not_found');
@@ -117,11 +105,11 @@ test('weather route applies the same no-store/security policy to validated live 
     const url = new URL(input);
     const body = url.hostname === 'geocoding-api.open-meteo.com'
       ? { results: [{ name: 'Sample Town', country_code: 'US', postcodes: ['00000'], latitude: 40, longitude: -75 }] }
-      : { current: { time: now, temperature_2m: 70, weather_code: 0 }, current_units: { temperature_2m: '°F' }, daily: { temperature_2m_max: [75], temperature_2m_min: [60] }, daily_units: { temperature_2m_max: '°F', temperature_2m_min: '°F' } };
+      : { timezone: 'America/New_York', current: { time: now, temperature_2m: 70, weather_code: 0 }, current_units: { temperature_2m: '°F' }, daily: { temperature_2m_max: [75], temperature_2m_min: [60] }, daily_units: { temperature_2m_max: '°F', temperature_2m_min: '°F' } };
     return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
   });
-  const response = await worker.fetch(new Request('https://example.com/api/weather', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' }, body: '{"zipCode":"00000"}',
+  const response = await worker.fetch(new Request('http://127.0.0.1/api/weather', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1' }, body: '{"zipCode":"00000"}',
   }), env);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
@@ -139,7 +127,7 @@ test('malformed URL encoding is rejected before asset routing', async () => {
 
 test('public routes reject mutation and preflight without inventing permissive CORS', async () => {
   const { env, requests } = assets();
-  for (const path of ['/', '/app.js', '/api/demo', '/health']) {
+  for (const path of ['/', '/app.js', '/health']) {
     for (const method of ['POST', 'PUT', 'DELETE', 'OPTIONS']) {
       const response = await worker.fetch(new Request(`https://example.com${path}`, { method }), env);
       assert.equal(response.status, 405);
@@ -160,13 +148,15 @@ test('static responses get same-origin security policy without caching personal 
   const policy = response.headers.get('Content-Security-Policy');
   assert.ok(policy.includes("connect-src 'self'"));
   assert.ok(policy.includes("script-src 'self'"));
+  assert.ok(policy.includes("img-src 'self' https:"));
+  assert.ok(!policy.includes('img-src *'));
   assert.ok(policy.includes("frame-ancestors 'none'"));
   assert.ok(!policy.includes('unsafe-inline'));
 });
 
 test('HEAD returns headers without data or asset response bodies', async () => {
   const { env } = assets();
-  for (const [path, status] of [['/', 200], ['/api/demo', 200], ['/health', 200], ['/api/display', 401], ['/admin', 503]]) {
+  for (const [path, status] of [['/', 200], ['/api/demo', 404], ['/health', 200], ['/api/display', 401], ['/admin', 503]]) {
     const response = await worker.fetch(new Request(`https://example.com${path}`, { method: 'HEAD' }), env);
     assert.equal(response.status, status);
     assert.equal(await response.text(), '');

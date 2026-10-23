@@ -4,6 +4,8 @@ import { build } from 'esbuild';
 
 const compiled = await build({ entryPoints: ['src/weather.ts'], bundle: true, format: 'esm', platform: 'neutral', write: false });
 const { getWeatherForZip, requestZip, boundedJson } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString('base64')}`);
+const timezoneModule = await build({ entryPoints: ['shared/timezone.ts'], bundle: true, format: 'esm', platform: 'neutral', write: false });
+const { isTimeZone } = await import(`data:text/javascript;base64,${Buffer.from(timezoneModule.outputFiles[0].text).toString('base64')}`);
 const now = new Date('2026-10-20T12:00:00.000Z');
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 const geocode = () => ({ results: [{ name: 'Sample Town', admin1: 'Sample State', country_code: 'US', postcodes: ['00000'], latitude: 40, longitude: -75 }] });
@@ -12,6 +14,7 @@ const forecast = () => ({
   current_units: { temperature_2m: '°F' },
   daily: { temperature_2m_max: [86], temperature_2m_min: [64] },
   daily_units: { temperature_2m_max: '°F', temperature_2m_min: '°F' },
+  timezone: 'America/New_York',
 });
 
 function providers() {
@@ -32,11 +35,19 @@ function providers() {
 const dependencies = (api, extra = {}) => ({ fetcher: api.fetcher, now, ...extra });
 const error = (status, code) => (value) => value.status === status && (!code || value.code === code);
 
+test('IANA timezone validation accepts DST-sensitive zones and rejects unbounded or injected values', () => {
+  assert.equal(isTimeZone('America/New_York'), true);
+  for (const timeZone of [undefined, '', 'Not/A_Real_Time_Zone', 'America/New_York\n', '../Etc/GMT+5', 'x'.repeat(65)]) {
+    assert.equal(isTimeZone(timeZone), false);
+  }
+});
+
 test('exact US ZIP lookup returns validated Fahrenheit weather without exposing coordinates', async () => {
   const api = providers();
   const data = await getWeatherForZip('00000', dependencies(api));
   assert.equal(data.unit, 'fahrenheit');
   assert.equal(data.mode, 'live');
+  assert.equal(data.timeZone, 'America/New_York');
   assert.equal(data.temperatureFahrenheit, 82.4);
   assert.equal(data.highFahrenheit, 86);
   assert.equal(data.lowFahrenheit, 64);
@@ -102,6 +113,10 @@ test('Celsius, null, inverted highs/lows, stale times and malformed forecasts fa
     (api) => { api.weather.current.time += 2 * 3600; },
     (api) => { api.weather.current.weather_code = null; },
     (api) => { api.weather.daily = null; },
+    (api) => { delete api.weather.timezone; },
+    (api) => { api.weather.timezone = 'Not/A_Real_Time_Zone'; },
+    (api) => { api.weather.timezone = 'America/New_York\n'; },
+    (api) => { api.weather.timezone = 'x'.repeat(65); },
   ]) {
     const api = providers();
     mutate(api);
@@ -154,6 +169,7 @@ test('public weather cache keys omit raw ZIPs and expire independently of other 
   assert.equal(entries.size, 1);
   const [key, response] = [...entries][0];
   assert.ok(!key.includes('00000'));
+  assert.match(key, /\/.weather-cache\/v2\//);
   assert.equal(response.headers.get('Cache-Control'), 'public, max-age=600');
   api.geo.results[0].postcodes = ['11111'];
   await getWeatherForZip('11111', dependencies(api, { cache }));
@@ -178,6 +194,24 @@ test('cache entries with unexpected fields cannot expose extra location data', a
   const result = await getWeatherForZip('00000', dependencies(api, { cache }));
   assert.equal(api.calls.length, 2);
   assert.equal(result.latitude, undefined);
+});
+
+test('legacy and invalid-timezone cache payloads are rejected and refreshed', async () => {
+  const api = providers();
+  const legacy = await getWeatherForZip('00000', dependencies(api));
+  const malformed = { ...legacy, timeZone: 'America/New_York\n' };
+  api.calls.length = 0;
+
+  for (const cached of [
+    Object.fromEntries(Object.entries(legacy).filter(([key]) => key !== 'timeZone')),
+    malformed,
+  ]) {
+    const cache = { async match() { return json(cached); }, async put() {} };
+    const refreshed = await getWeatherForZip('00000', dependencies(api, { cache }));
+    assert.equal(refreshed.timeZone, 'America/New_York');
+    assert.equal(api.calls.length, 2);
+    api.calls.length = 0;
+  }
 });
 
 test('weather body accepts only a small ZIP5 JSON object without extra provider options', async () => {
