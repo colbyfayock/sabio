@@ -12,10 +12,12 @@ There is no calendar, task integration, private upload, or cloud-album sync.
 
 The first explicitly approved Free-only batch created one Sabio Worker/D1 database,
 one reusable exact-owner allow policy and one Access application covering only the
-admin UI/API paths on the account's `workers.dev` address. The owner-local configuration,
-resource/version IDs and setup credentials remain ignored under `private/`; the token
-is never a Worker binding or frontend variable. The public local config is unchanged.
-No paid upgrade or unrelated Access/network rule was applied.
+admin UI/API paths on the account's `workers.dev` address. The custom hostname
+`sabio.fayock.com` is also routed to the Worker; its route is declared in the ignored
+production config so subsequent Wrangler deploys preserve it. The owner-local
+configuration, resource/version IDs and setup credentials remain ignored under
+`private/`; the token is never a Worker binding or frontend variable. The public local
+config is unchanged. No paid upgrade or unrelated Access/network rule was applied.
 
 Remote checks of the earlier flow passed: HTTPS shell/security headers, managed
 bootstrap, unapproved weather/display denial, forged cookie rejection, owner-path login
@@ -23,7 +25,11 @@ redirects, CSRF denial, pending enrollment and private-path 404s. The new deploy
 was smoke-tested for removed public endpoints, Access redirects, cross-origin claim
 denial and invalid-code denial. One owner-run pairing loaded the dashboard; replay was
 denied and the owner confirmed the notification email arrived. Revocation of that test
-session remains pending. Hardware remains a gate.
+session remains pending. After the pairing deploy, the custom hostname temporarily
+returned a 307 to the portfolio because its Worker route was missing from the production
+config. The existing proxied hostname was restored as a Worker Route without changing
+DNS; custom `/`, `/health`, `/api/bootstrap`, display denial and Access redirect checks
+now pass. Hardware remains a gate.
 The first release has no earlier good deployed version to roll back to; do not assume
 an untested code rollback or database recovery procedure has been proven.
 
