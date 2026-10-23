@@ -119,3 +119,13 @@ test('managed routing integrates real signed owner verification, original-browse
   assert.equal((await (await worker.fetch(request('/api/bootstrap', undefined, displayHeaders), env)).json()).enrolled, false);
   assert.equal(forecastRequests, 1);
 });
+
+test('allowed secondary origins still reject cross-origin weather and oversized allowlists', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const env = { ...vars, DB: db, ASSETS: { async fetch() { return new Response('fixture'); } } };
+
+  assert.equal((await worker.fetch(request('/api/weather', { zipCode: '00000' }, { Origin: origin }, secondaryOrigin), env)).status, 403);
+  const tooMany = [origin, secondaryOrigin, 'https://a.example.com', 'https://b.example.com', 'https://c.example.com'].join(',');
+  assert.equal((await worker.fetch(request('/api/bootstrap'), { ...env, APP_ALLOWED_ORIGINS: tooMany })).status, 503);
+});
