@@ -13,9 +13,12 @@ class Element {
   constructor() {
     this.textContent = '';
     this.listeners = new Map();
+    this.attributes = {};
+    this.hidden = false;
   }
   addEventListener(name, callback) { this.listeners.set(name, callback); }
   fire(name) { this.listeners.get(name)?.(); }
+  setAttribute(name, value) { this.attributes[name] = value; }
 }
 
 function validForecast(overrides = {}) {
@@ -35,14 +38,19 @@ function browser(zipCode = null, fetcher = async () => response(validForecast())
   const elements = new Map();
   const timers = new Map();
   const windowListeners = new Map();
+  const documentListeners = new Map();
   const calls = [];
   const navigator = { onLine: true };
+  let theme = 'light';
   let timerID = 0;
   const document = {
+    documentElement: { getAttribute(name) { return name === 'data-theme' ? theme : null; } },
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, new Element());
       return elements.get(id);
     },
+    addEventListener(name, callback) { documentListeners.set(name, callback); },
+    fire(name, event = {}) { documentListeners.get(name)?.(event); },
   };
   const window = {
     setTimeout(callback, delay) {
@@ -64,7 +72,9 @@ function browser(zipCode = null, fetcher = async () => response(validForecast())
   const controller = context.WeatherModule.initializeWeatherController(() => zipCode);
   return {
     calls, elements, timers, window, navigator, controller,
+    weatherIconForCondition: context.WeatherModule.weatherIconForCondition,
     setZip(value) { zipCode = value; controller.setZipCode(value); },
+    setTheme(value) { theme = value; document.fire('sabio:themechange'); },
     async settle() { await new Promise(setImmediate); },
     async runTimer(delay) {
       const entry = [...timers].find(([, timer]) => timer.delay === delay);
@@ -76,21 +86,44 @@ function browser(zipCode = null, fetcher = async () => response(validForecast())
   };
 }
 
-test('weather markup identifies Fahrenheit, uses neutral iconography, and credits providers', async () => {
+test('weather data uses icons while ZIP and attribution live in Sabio options', async () => {
   const html = await readFile('web/index.html', 'utf8');
   assert.match(html, /id="temperature">—°F/);
-  assert.match(html, /H —°F · L —°F/);
   assert.match(html, /aria-label="Live weather"/);
+  assert.match(html, /id="weather-icon" role="img"/);
+  assert.match(html, /class="weather-range" role="group" aria-label="Daily high and low"/);
+  assert.ok(html.indexOf('id="weather-icon"') < html.indexOf('class="weather-range"'));
   assert.match(html, /https:\/\/open-meteo\.com\//);
   assert.match(html, /https:\/\/www\.geonames\.org\//);
+  assert.match(html, /https:\/\/creativecommons\.org\/licenses\/by\/4\.0\//);
   assert.match(html, /target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /id="weather-refresh"[^>]*>Refresh weather/);
+  assert.match(html, /id="display-options"[\s\S]*id="weather-location"[\s\S]*class="options-attribution"/);
+  assert.ok(html.indexOf('id="weather-location"') < html.indexOf('<section aria-label="Live weather">'));
+  assert.doesNotMatch(html, /class="weather-label"|class="location-row"/);
+  assert.doesNotMatch(html, />Retry weather</);
   assert.doesNotMatch(html, /Sample forecast|Demo forecast/);
+});
+
+test('condition labels map to simple local weather icon categories', () => {
+  const page = browser();
+  const map = page.weatherIconForCondition;
+  for (const [condition, icon] of [
+    ['Clear sky', 'clear'], ['Mainly clear', 'clear'], ['Partly cloudy', 'partly'],
+    ['Overcast', 'cloud'], ['Freezing fog', 'fog'], ['Light drizzle', 'rain'],
+    ['Rain showers', 'rain'], ['Snow grains', 'snow'], ['Thunderstorm with hail', 'storm'],
+    ['Conditions unavailable', 'cloud'],
+  ]) assert.equal(map(condition), icon, condition);
+  assert.equal(map('Mainly clear', true), 'moon');
+  assert.equal(map('Partly cloudy', true), 'partly-night');
 });
 
 test('no ZIP means no request; saved ZIP+4 posts only its first five digits without query or credentials', async () => {
   const page = browser();
   assert.equal(page.calls.length, 0);
   assert.equal(page.elements.get('temperature').textContent, '—°F');
+  assert.equal(page.elements.get('weather-high').textContent, 'H —°F');
+  assert.equal(page.elements.get('weather-low').textContent, 'L —°F');
   page.setZip('00000-0000');
   await page.settle();
   assert.equal(page.calls.length, 1);
@@ -101,10 +134,26 @@ test('no ZIP means no request; saved ZIP+4 posts only its first five digits with
   assert.equal(options.headers['Content-Type'], 'application/json');
   assert.deepEqual(JSON.parse(options.body), { zipCode: '00000' });
   assert.equal(page.elements.get('temperature').textContent, '68°F');
-  assert.equal(page.elements.get('condition').textContent, 'Light rain');
-  assert.equal(page.elements.get('weather-range').textContent, 'H 72°F · L 54°F');
-  assert.equal(page.elements.get('weather-resolved').textContent, 'North End');
+  assert.equal(page.elements.get('condition').hidden, true);
+  assert.equal(page.elements.get('weather-icon').hidden, false);
+  assert.equal(page.elements.get('weather-icon').attributes['aria-label'], 'Light rain');
+  assert.equal(page.elements.get('weather-icon-rain').hidden, false);
+  assert.equal(page.elements.get('weather-high').textContent, 'H 72°F');
+  assert.equal(page.elements.get('weather-low').textContent, 'L 54°F');
+  assert.equal(page.elements.has('weather-resolved'), false);
   assert.match(page.elements.get('weather-status').textContent, /^Updated/);
+});
+
+test('clear weather changes from a sun to a moon with the automatic night theme', async () => {
+  const page = browser('00008', async () => response(validForecast({ condition: 'Mainly clear' })));
+  await page.settle();
+  assert.equal(page.elements.get('weather-icon-clear').hidden, false);
+  assert.equal(page.elements.get('weather-icon-moon').hidden, true);
+
+  page.setTheme('dark');
+  assert.equal(page.elements.get('weather-icon-clear').hidden, true);
+  assert.equal(page.elements.get('weather-icon-moon').hidden, false);
+  assert.equal(page.elements.get('weather-icon').attributes['aria-label'], 'Mainly clear');
 });
 
 test('changing or resetting ZIP clears the old display and ignores out-of-order responses', async () => {
@@ -117,7 +166,7 @@ test('changing or resetting ZIP clears the old display and ignores out-of-order 
   pending[1](response(validForecast({ locationLabel: 'New ZIP', temperatureFahrenheit: 61 })));
   await page.settle();
   assert.equal(page.elements.get('temperature').textContent, '61°F');
-  assert.equal(page.elements.get('weather-resolved').textContent, 'New ZIP');
+  assert.equal(page.elements.has('weather-resolved'), false);
 
   const resetPending = [];
   const reset = browser('00002', () => new Promise((resolve) => resetPending.push(resolve)));
@@ -125,7 +174,7 @@ test('changing or resetting ZIP clears the old display and ignores out-of-order 
   resetPending[0](response(validForecast({ temperatureFahrenheit: 88 })));
   await reset.settle();
   assert.equal(reset.elements.get('temperature').textContent, '—°F');
-  assert.equal(reset.elements.get('weather-resolved').textContent, '');
+  assert.equal(reset.elements.has('weather-resolved'), false);
   assert.equal(reset.calls.length, 1);
 });
 
@@ -145,10 +194,10 @@ test('same ZIP failure keeps the last forecast and marks it stale with its fetch
   assert.ok(page.timers.size > 0);
 });
 
-test('weather retry does not overlap an in-flight request for the same ZIP', async () => {
+test('weather refresh does not overlap an in-flight request for the same ZIP', async () => {
   let resolveRequest;
   const page = browser('00004', () => new Promise((resolve) => { resolveRequest = resolve; }));
-  page.elements.get('weather-retry').fire('click');
+  page.elements.get('weather-refresh').fire('click');
   assert.equal(page.calls.length, 1);
   resolveRequest(response(validForecast()));
   await page.settle();
@@ -164,16 +213,17 @@ test('bad units and invalid ranges are rejected instead of being shown as Fahren
     const page = browser('00005', async () => response(validForecast(invalid)));
     await page.settle();
     assert.equal(page.elements.get('temperature').textContent, '—°F');
+    assert.equal(page.elements.get('weather-icon').hidden, true);
     assert.match(page.elements.get('weather-status').textContent, /expected format/);
   }
 });
 
-test('provider location strings are displayed as text rather than HTML', async () => {
+test('provider city labels are not shown in the display UI', async () => {
   const name = '<img src=x onerror=alert(1)>';
   const page = browser('00000', async () => response(validForecast({ locationLabel: name })));
   await page.settle();
-  assert.equal(page.elements.get('weather-resolved').textContent, name);
-  assert.equal(page.elements.get('weather-resolved').innerHTML, undefined);
+  assert.equal(page.elements.has('weather-resolved'), false);
+  assert.equal(page.elements.get('temperature').textContent, '68°F');
 });
 
 test('offline skips requests, online resumes, and failures use bounded exponential retry delays', async () => {

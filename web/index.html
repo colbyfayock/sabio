@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f4ee">
     <meta name="referrer" content="no-referrer">
-    <title>Sabio — Horizon</title>
+    <title>Sabio</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
@@ -13,44 +13,67 @@
   <body>
     <main class="page-shell frame" hidden>
       <aside class="rail" aria-label="Time and weather">
-        <header class="rail-head"><h1 class="brand">sabio</h1><span class="folio">Horizon <span class="preview-label" id="display-mode">/ Checking access</span></span></header>
+        <header class="rail-head">
+          <h1 class="brand"><button class="brand-toggle" id="display-options-toggle" type="button" aria-controls="display-options" aria-expanded="false">sabio</button></h1>
+          <section class="options-panel" id="display-options" aria-labelledby="options-title" hidden>
+            <h2 id="options-title">Display options</h2>
+            <button class="text-button" id="fullscreen-toggle" type="button" aria-label="Enter fullscreen" title="Enter fullscreen" aria-pressed="false"><span id="fullscreen-label">Enter fullscreen</span></button>
+            <p class="small-note" id="fullscreen-message" role="status"></p>
+            <div class="options-location">
+              <span class="zip-label" id="weather-location">Weather location</span>
+              <button class="text-button" id="location-open" type="button">Set ZIP code</button>
+              <p class="small-note" id="location-status" role="status" aria-live="polite"></p>
+            </div>
+            <button class="text-button" id="weather-refresh" type="button">Refresh weather</button>
+            <p class="small-note" id="weather-status" role="status" aria-live="polite">No ZIP selected.</p>
+            <div class="options-attribution">
+              <p>Weather data: <a href="https://open-meteo.com/en/licence" target="_blank" rel="noopener noreferrer">Open-Meteo</a></p>
+              <p>Location data: <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a></p>
+              <p>License: <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></p>
+            </div>
+          </section>
+        </header>
         <div class="content">
           <section aria-label="Display time">
-            <p class="eyebrow">Local time</p>
             <p class="time"><time id="clock">--:--</time><span class="meridiem" id="meridiem"></span></p>
             <p class="date" id="date">Loading date</p>
             <p class="small-note" id="time-zone">Browser local time · set a ZIP</p>
           </section>
           <div class="divider"></div>
           <section aria-label="Live weather">
-            <p class="weather-label">Weather</p>
-            <div class="weather-main"><span class="temperature" id="temperature">—°F</span><div><div class="condition" id="condition">Set ZIP to load weather</div><div class="high-low" id="weather-range">H —°F · L —°F</div></div></div>
-            <div class="location-row"><span class="zip-label" id="weather-location">Weather location</span><button class="text-button" id="location-open" type="button">Set ZIP code</button></div>
-            <p class="small-note" id="weather-resolved"></p>
-            <div class="weather-footer"><p class="small-note" id="weather-status" role="status" aria-live="polite">No ZIP selected.</p><button class="text-button" id="weather-retry" type="button">Retry weather</button></div>
-            <p class="small-note" id="location-status" role="status" aria-live="polite"></p>
+            <div class="weather-main">
+              <span class="temperature" id="temperature">—°F</span>
+              <div class="weather-summary">
+                <div class="condition" id="condition">Set ZIP to load weather</div>
+                <div class="weather-icon" id="weather-icon" role="img" aria-label="Weather condition" hidden>
+                  <span id="weather-icon-clear" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><circle cx="16" cy="16" r="5"/><path d="M16 2v4M16 26v4M2 16h4M26 16h4M6.1 6.1 9 9M23 23l2.9 2.9M25.9 6.1 23 9M9 23l-2.9 2.9"/></svg></span>
+                  <span id="weather-icon-moon" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M23 20.5A10 10 0 0 1 11.5 5 10 10 0 1 0 23 20.5z"/><path d="M23 5v4M21 7h4"/></svg></span>
+                  <span id="weather-icon-partly" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><circle cx="11" cy="10" r="4"/><path d="M11 2v2M3 10h2M5.3 4.3l1.4 1.4M17 10h1M11 16v1M7 22h17a4 4 0 0 0 .3-8 7 7 0 0 0-13.4 2A4 4 0 0 0 7 22z"/></svg></span>
+                  <span id="weather-icon-partly-night" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M21 3.5A7 7 0 0 1 13.5 11 7.5 7.5 0 1 0 21 3.5z"/><path d="M6 25h17a4 4 0 0 0 .3-8 7 7 0 0 0-13.4 2A4 4 0 0 0 6 25z"/></svg></span>
+                  <span id="weather-icon-cloud" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 23h17a5 5 0 0 0 .4-10 8 8 0 0 0-15.3 2.2A4 4 0 0 0 7 23z"/></svg></span>
+                  <span id="weather-icon-fog" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 18h17a5 5 0 0 0 .4-10 8 8 0 0 0-15.3 2.2A4 4 0 0 0 7 18zM5 23h21M8 27h16"/></svg></span>
+                  <span id="weather-icon-rain" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 19h17a5 5 0 0 0 .4-10 8 8 0 0 0-15.3 2.2A4 4 0 0 0 7 19zM10 23l-1 3M17 23l-1 3M24 23l-1 3"/></svg></span>
+                  <span id="weather-icon-snow" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 18h17a5 5 0 0 0 .4-10 8 8 0 0 0-15.3 2.2A4 4 0 0 0 7 18zM10 22v7M7 23.7l6 3.6M13 23.7l-6 3.6M21 22v7M18 23.7l6 3.6M24 23.7l-6 3.6"/></svg></span>
+                  <span id="weather-icon-storm" hidden><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 17h17a5 5 0 0 0 .4-10 8 8 0 0 0-15.3 2.2A4 4 0 0 0 7 17zM17 18l-5 7h4l-1 6 6-9h-4l2-4"/></svg></span>
+                </div>
+              </div>
+              <div class="weather-range" role="group" aria-label="Daily high and low">
+                <span id="weather-high">H —°F</span>
+                <span id="weather-low">L —°F</span>
+              </div>
+            </div>
           </section>
         </div>
-        <footer class="rail-foot">
-          <div class="theme-row"><label for="themeMode">Appearance</label><select id="themeMode"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
-          <p class="small-note">Auto: light 7 a.m.–7 p.m. in the displayed timezone.</p>
-          <p class="small-note" id="appearance-status" role="status"></p>
-          <button class="text-button" id="fullscreen-toggle" type="button" aria-pressed="false"><span id="fullscreen-label">Enter fullscreen</span></button>
-          <p class="small-note" id="fullscreen-message" role="status"></p>
-          <p class="attribution">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></p>
-        </footer>
       </aside>
       <section class="scene" aria-label="Photo slideshow">
         <img class="photo" id="photoA" alt="" aria-hidden="true" referrerpolicy="no-referrer" decoding="async">
         <img class="photo" id="photoB" alt="" aria-hidden="true" referrerpolicy="no-referrer" decoding="async">
         <div class="photo-fallback" id="photo-fallback">A little room to look.<br><span>Loading photographs…</span></div>
         <p class="photo-status" id="photo-status" role="status" aria-live="polite"></p>
-        <nav class="scene-controls" aria-label="Photo controls">
-          <button class="control" id="photo-open" type="button">Photo source</button>
-          <button class="control" id="pause-photos" type="button" aria-pressed="false">Pause</button>
-          <button class="control" id="next-photo" type="button">Next</button>
+        <nav class="photo-navigation" aria-label="Photo navigation">
+          <button class="photo-zone photo-previous" id="photo-previous" type="button"><span class="visually-hidden">Previous photo</span></button>
+          <button class="photo-zone photo-next" id="photo-next" type="button"><span class="visually-hidden">Next photo</span></button>
         </nav>
-        <div class="credit" id="photo-credit">Sample photography via Unsplash</div>
       </section>
     </main>
     <div class="dialog-shade" id="access-dialog" role="dialog" aria-modal="true" aria-labelledby="access-title">
@@ -80,20 +103,6 @@
             <button class="text-button" id="location-cancel" type="button">Cancel</button>
             <button class="text-button" id="location-save" type="submit">Save</button>
           </div>
-        </form>
-      </section>
-    </div>
-    <div class="dialog-shade" id="photo-dialog" role="dialog" aria-modal="true" aria-labelledby="photo-title" aria-describedby="photo-description" hidden>
-      <section class="dialog photo-dialog">
-        <h2 id="photo-title">A view of your choosing.</h2>
-        <p id="photo-description">Use 1–12 public HTTPS image URLs, one per line. Images load directly from their hosts, which receive ordinary network metadata. Do not use private links, access tokens, or credentials. Settings stay in this browser; this is not a private upload service.</p>
-        <form id="photo-form" novalidate>
-          <label for="photo-urls">Image URLs</label>
-          <textarea id="photo-urls" rows="5" maxlength="26000" autocomplete="off" spellcheck="false" aria-describedby="photo-description photo-error"></textarea>
-          <label for="photo-hold">Hold each photo (seconds)</label>
-          <input id="photo-hold" type="number" min="10" max="3600" step="1" value="20" aria-describedby="photo-error">
-          <p class="dialog-error" id="photo-error" role="alert"></p>
-          <div class="dialog-actions"><button class="text-button" id="photo-samples" type="button">Use samples</button><button class="text-button" id="photo-cancel" type="button">Cancel</button><button class="text-button" type="submit">Save</button></div>
         </form>
       </section>
     </div>

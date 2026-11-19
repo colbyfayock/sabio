@@ -13,7 +13,8 @@
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUDIENCE": "",
     "OWNER_EMAIL": "",
-    "NOTIFY_FROM_EMAIL": ""
+    "NOTIFY_FROM_EMAIL": "",
+    "GOOGLE_PHOTOS_CLIENT_ID": ""
   },
   "d1_databases": [
     {
@@ -22,6 +23,14 @@
       "database_id": "00000000-0000-0000-0000-000000000000",
       "remote": false,
       "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTO_BUCKET",
+      "bucket_name": "sabio-private-photos",
+      "preview_bucket_name": "sabio-private-photos-local",
+      "remote": false
     }
   ],
   "assets": {

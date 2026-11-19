@@ -16,10 +16,11 @@ Unauthenticated production checks confirmed public enrollment/completion routes 
 404, admin pairing remains behind Access, cross-origin claims are denied, and an
 unknown code cannot create a session. An owner-run pairing succeeded, replay was
 denied, and the owner confirmed the notification email arrived; revocation of this new
-test session is still pending. Earlier checks covered the prior flow. Access token
-lifetime, the scheduled cleanup run and log redaction still need deployed observation;
-the frame has not been tested. Do not put private account data or credentials into the
-app.
+test session is still pending. The private Google Photos Picker Worker version is now
+deployed with private R2 and D1 migrations `0005`/`0006`. Public smoke checks confirm
+Access redirects on `/admin` and `/api/admin/photos`, and unauthenticated photo reads
+return 401. The owner has not yet completed a real OAuth/import/display test. Access
+token lifetime, cleanup, production log review and the frame remain unverified.
 
 The first display target is Firefox Android 68.11.0 on a 1280×800 Android 4.4 frame.
 The application should also support approved modern browsers. The old frame remains
@@ -147,6 +148,9 @@ mode requires complete origin/owner configuration and D1; valid display sessions
 are required for weather, with server-side revocation and abuse limits. Unknown
 API/static routes return 404 before asset fallback. The managed path is locally
 tested, not a claim of deployed security or approval for private integrations.
+The display shows the current temperature and a local weather-condition icon; clear
+and partly-clear conditions use moon variants at night. Daily high and low appear as a
+small vertical stack after the icon.
 
 ### Local access-control testing
 
@@ -167,23 +171,44 @@ See [access control](docs/access-control.md) before configuring managed mode.
 
 ### Photos and appearance
 
-- **Photo source** accepts 1–12 public HTTPS image URLs, one per line, and a whole-number
-  hold of 10–3600 seconds. The default is 20 seconds plus a 1.2-second transition.
-  **Use samples** fills the editor with the built-in Unsplash images; Save applies it.
-- Photo URLs and hold duration are stored only in this browser under `sabio.photos.v1`.
-  These are not private URLs or secrets: hosts receive direct image requests and ordinary
-  network metadata. Referrers are suppressed. There is no server-side image proxy,
-  file upload, cloud-album sync, or authenticated remote settings service.
+- New displays use the built-in public sample photos, with a 10-minute hold and a
+  1.2-second transition. The old built-in 20-second sample default upgrades to 10 minutes.
+- Tap the left or right half of the photo to move backward or forward. There are no
+  on-photo Pause/Next/source controls and no source editor in Display options. Existing
+  browser-local preferences under `sabio.photos.v1` remain honored; a personalized or
+  dynamic source is future work.
+- Existing photo URLs and hold values are browser-local, not secrets or authenticated
+  settings. Image hosts receive ordinary network metadata; referrers are suppressed.
+  The local preview continues to load these sources directly. In managed mode, owner
+  administration can import up to 12 explicitly selected Google Photos stills per
+  session as a snapshot; it does not import or continuously sync a whole album. More
+  can be added with another Picker session. Video files are rejected.
+- Managed photos are stored in a non-public R2 bucket and delivered only through Worker
+  routes after owner or paired-display authentication. The Worker stores no public image
+  URLs or Google `baseUrl`s. The refresh token is encrypted in D1 until Google Photos is
+  disconnected; per-import access tokens, session IDs and picker URIs are encrypted and
+  deleted on completion/expiry. **Disconnect Google Photos** revokes the Google token
+  and clears any active Picker session, but leaves already-imported photos in Sabio. A
+  display receives renderable image bytes, and Cloudflare account administrators retain
+  provider-level access. Local development uses R2's local emulator (`remote: false`).
+  Production R2, migrations `0005`/`0006` and the Worker version are deployed; real
+  owner OAuth/photo/display validation is still pending.
+- Imports are bounded to 12 items and 50 MiB per session, 8 MiB per image, 100 photos and
+  an 8 GiB application storage ceiling. These limits do not guarantee account-wide usage
+  stays free; confirm current R2/Workers billing controls before any live setup.
 - Use reasonably sized JPEGs (about 1200 pixels wide) for the frame. Source count and
   URL length are bounded, but image host availability and decoded image size are not
   controlled by Sabio. HTTPS/no-login/local-address checks are syntax checks, not a
   guarantee about DNS or redirects. Do not use sensitive links or access tokens.
 - Two image layers preload a replacement before fading. Failed images are skipped;
-  if every source fails, the last good image remains and retries are bounded. Pause
-  stops automatic rotation, Next advances manually, and hidden pages stop rotation.
-  Reduced-motion users get immediate transitions. Pause state is visit-only.
-- **Appearance** saves Auto/Light/Dark under `sabio.appearance.v1`. Auto is light
-  07:00–18:59 and dark 19:00–06:59 in the displayed timezone, not sunrise/sunset.
+  if every source fails, the last good image remains and retries are bounded. Hidden
+  pages stop rotation; reduced-motion users get immediate transitions.
+- Appearance switches automatically: light 07:00–18:59 and dark 19:00–06:59 in the
+  displayed timezone, not sunrise/sunset. There is no appearance selector or stored
+  manual appearance preference.
+- ZIP and fullscreen controls, weather refresh, and last-updated status are grouped in
+  Display options opened by tapping `sabio`. Required Open-Meteo, GeoNames and CC BY 4.0
+  attribution is also there; photo-source captions are not displayed.
 - Blocked browser storage produces visible visit-only notices instead of breaking
   the dashboard. Settings do not sync between browsers. Fullscreen requires a gesture.
 

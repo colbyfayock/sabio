@@ -91,9 +91,10 @@ weather fallback is used.
 
 ## Photo and appearance preferences
 
-The browser stores public photo URLs/hold duration under `sabio.photos.v1` and
-Auto/Light/Dark under `sabio.appearance.v1`. These are not secrets or authenticated
-settings. Never enter private feed links, image access tokens or credentials.
+The browser stores public photo URLs/hold duration under `sabio.photos.v1`; these are
+not secrets or authenticated settings. Appearance is automatically derived from the
+displayed timezone and is no longer user-configurable or stored. Never enter private
+feed links, image access tokens or credentials.
 Images load directly from external HTTPS hosts with no referrer, but the hosts can
 still observe ordinary network metadata. The Worker does not proxy image URLs.
 Syntax checks reject non-HTTPS, credentialed and obvious local-address URLs; they
@@ -102,8 +103,26 @@ bounded, but decoded image memory and host behavior are outside this control.
 
 The CSP permits HTTPS image loads only in its image policy; scripts, styles and
 API connections remain same-origin, without inline code or arbitrary fetch access.
-No file upload, private photo storage or cloud-album integration is implemented.
-Reset ZIP removes only the location preference, not photo or appearance settings.
+Managed-mode Google Photos Picker import is implemented and tested locally with mocked
+Google APIs and R2. The owner explicitly selects individual still photos (searching by
+album is supported in Google's UI); Sabio stores a snapshot, not a whole-album mirror.
+OAuth requests only `photospicker.mediaitems.readonly`. The refresh token is AES-GCM
+encrypted in D1 until the owner disconnects Google Photos; per-import access tokens,
+session IDs and picker URIs are encrypted and removed on completion/expiry. Disconnect
+attempts Google token revocation and removes Sabio's stored grant; already-imported
+photos remain app-owned until separately removed. Photos are copied through the Worker
+into a private R2 binding. `/api/admin`
+routes require the signed owner Access JWT; `/api/display/photos` requires an active
+paired display session on every list/object request. Responses are `no-store`, and
+neither public R2 URLs nor Google base URLs are returned to displays. Common JPEG, PNG
+and WebP EXIF/XMP/text metadata segments are stripped where supported. Local development
+uses R2 emulation. Production R2 and additive migrations `0005`/`0006` are deployed; the
+Google OAuth client and secrets are configured. A real OAuth/import/display test has
+not yet been completed. Cloudflare account
+administrators retain provider-level access, and an authorized display can
+read/capture what it renders; this is not end-to-end encryption. Application quotas do
+not guarantee Cloudflare account usage remains free. Reset ZIP removes only the location
+preference, not photo settings or imported objects.
 
 ## Admin display descriptions
 

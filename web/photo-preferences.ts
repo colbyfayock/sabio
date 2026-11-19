@@ -6,11 +6,12 @@ export const SAMPLE_PHOTOS = [
   'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=75&fm=jpg',
   'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=75&fm=jpg',
 ];
+export const DEFAULT_HOLD_SECONDS = 600;
 
 export interface PhotoPreferences { version: 1; urls: string[]; holdSeconds: number; }
 
 export function defaultPhotoPreferences(): PhotoPreferences {
-  return { version: 1, urls: SAMPLE_PHOTOS.slice(), holdSeconds: 20 };
+  return { version: 1, urls: SAMPLE_PHOTOS.slice(), holdSeconds: DEFAULT_HOLD_SECONDS };
 }
 
 /** Browser image sources only: never pass these URLs to a server-side fetcher. */
@@ -40,7 +41,16 @@ export function readPhotoPreferences(source: LocationStorageSource): { preferenc
     if (raw === null) return { preferences: defaultPhotoPreferences(), message: '' };
     if (raw.length <= 26000) {
       const value: unknown = JSON.parse(raw);
-      if (validatePhotoPreferences(value)) return { preferences: value, message: '' };
+      if (validatePhotoPreferences(value)) {
+        // Upgrade only the old built-in 20-second default; preserve custom holds.
+        const isOldSampleDefault = value.holdSeconds === 20 &&
+          value.urls.length === SAMPLE_PHOTOS.length &&
+          value.urls.every((url, index) => url === SAMPLE_PHOTOS[index]);
+        return {
+          preferences: isOldSampleDefault ? { ...value, holdSeconds: DEFAULT_HOLD_SECONDS } : value,
+          message: '',
+        };
+      }
     }
     return { preferences: defaultPhotoPreferences(), message: 'Saved photo settings are invalid. Showing sample photography; save a valid source to replace them.' };
   } catch {

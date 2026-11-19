@@ -4,6 +4,7 @@ import {
   getDisplaySession,
   handleAccessRequest,
   limitDisplayBootstrap,
+  limitDisplayPhotos,
   limitDisplayWeather,
   refreshDisplaySession,
   type DisplaySessionNotice,
@@ -11,6 +12,7 @@ import {
 import { validOwnerConfiguration, verifyOwner } from './owner';
 import { recordDisplayCheckIn, recordDisplayWeatherArea } from './display-metadata';
 import { notifyNewDisplay } from './notifications';
+import { handleDisplayPhotos, handlePhotoAdminRequest } from './photos';
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -118,6 +120,21 @@ export default {
       } catch { return json(request, { error: 'access_unavailable' }, 503); }
     }
 
+    if (path === '/api/display/photos' || path.startsWith('/api/display/photos/')) {
+      if (request.method !== 'GET') return json(request, { error: 'method_not_allowed' }, 405, { Allow: 'GET' });
+      if (new URL(request.url).search) return json(request, { error: 'invalid_request' }, 400);
+      if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
+      if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
+      const origin = request.headers.get('Origin');
+      if (origin !== null && origin !== new URL(request.url).origin) return json(request, { error: 'origin_not_allowed' }, 403);
+      try {
+        const session = await getDisplaySession(request, env.DB);
+        if (!session) return json(request, { error: 'display_access_required' }, 401);
+        if (!await limitDisplayPhotos(request, env.DB, session.id)) return json(request, { error: 'rate_limited' }, 429, { 'Retry-After': '60' });
+        return secure(request, await handleDisplayPhotos(request, env));
+      } catch { return json(request, { error: 'photos_unavailable' }, 503); }
+    }
+
     if (['/api/enrollment', '/api/admin', '/api/display'].some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
       if (env.APP_MODE === 'managed') {
         if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
@@ -140,7 +157,8 @@ export default {
           }
           return delivery;
         };
-        const response = await handleAccessRequest(request, env.DB, (candidate) => owner(candidate, env), requestOrigin, notifyDisplay);
+        const response = await handleAccessRequest(request, env.DB, (candidate) => owner(candidate, env), requestOrigin, notifyDisplay,
+          (photoRequest, route, now) => handlePhotoAdminRequest(photoRequest, route, env, now));
         return secure(request, response || json(request, { error: 'not_found' }, 404));
       }
       if (path === '/api/display' || path.startsWith('/api/display/')) return json(request, { error: 'display_access_unavailable' }, 401);

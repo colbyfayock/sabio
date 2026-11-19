@@ -1,8 +1,5 @@
-export type ThemeMode = 'auto' | 'light' | 'dark';
-export const THEME_STORAGE_NAME = 'sabio.appearance.v1';
-
-export function themeForHour(mode: ThemeMode, hour: number): 'light' | 'dark' {
-  return mode === 'auto' ? hour >= 7 && hour < 19 ? 'light' : 'dark' : mode;
+export function themeForHour(hour: number): 'light' | 'dark' {
+  return hour >= 7 && hour < 19 ? 'light' : 'dark';
 }
 
 /** Resolve all display fields from the same instant and timezone, including DST. */
@@ -19,18 +16,9 @@ export function displayTime(now: Date, timeZone?: string): { clock: string; meri
 }
 
 export function initializeDisplayTime(): { setTimeZone(value: string | null, zipSelected: boolean): void } {
-  const select = document.getElementById('themeMode') as HTMLSelectElement | null;
-  const status = document.getElementById('appearance-status');
-  let mode: ThemeMode = 'auto';
   let timeZone: string | undefined;
   let zipSelected = false;
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_NAME);
-    if (stored === 'auto' || stored === 'light' || stored === 'dark') mode = stored;
-  } catch {
-    if (status) status.textContent = 'Appearance lasts for this visit; browser storage is unavailable.';
-  }
-  if (select) select.value = mode;
+  let currentTheme: 'light' | 'dark' | null = null;
   const update = (): void => {
     const fields = displayTime(new Date(), timeZone);
     for (const [id, value] of [['clock', fields.clock], ['meridiem', fields.meridiem], ['date', fields.date]]) {
@@ -39,20 +27,13 @@ export function initializeDisplayTime(): { setTimeZone(value: string | null, zip
     }
     const label = document.getElementById('time-zone');
     if (label) label.textContent = timeZone ? timeZone.replace(/_/g, ' ') : zipSelected ? 'Browser time · ZIP timezone pending' : 'Browser local time · set a ZIP';
-    document.documentElement.setAttribute('data-theme', themeForHour(mode, fields.hour));
-  };
-  select?.addEventListener('change', () => {
-    const value = select.value;
-    if (value !== 'auto' && value !== 'light' && value !== 'dark') return;
-    mode = value;
-    try {
-      window.localStorage.setItem(THEME_STORAGE_NAME, mode);
-      if (status) status.textContent = '';
-    } catch {
-      if (status) status.textContent = 'Appearance lasts for this visit; browser storage is unavailable.';
+    const theme = themeForHour(fields.hour);
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme !== currentTheme) {
+      currentTheme = theme;
+      document.dispatchEvent(new Event('sabio:themechange'));
     }
-    update();
-  });
+  };
   update();
   window.setInterval(update, 1000);
   document.addEventListener('visibilitychange', update);

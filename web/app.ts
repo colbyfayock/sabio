@@ -4,10 +4,36 @@ import { initializeDisplayTime } from './display-time';
 import { initializePhotos } from './photos';
 import { initializeAccess } from './access';
 
+const optionsToggle = document.getElementById('display-options-toggle');
+const optionsPanel = document.getElementById('display-options');
+
+function closeOptions(restoreFocus = false): void {
+  if (!optionsPanel || optionsPanel.hidden) return;
+  optionsPanel.hidden = true;
+  optionsToggle?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) optionsToggle?.focus();
+}
+
+optionsToggle?.addEventListener('click', () => {
+  if (!optionsPanel) return;
+  optionsPanel.hidden = !optionsPanel.hidden;
+  optionsToggle.setAttribute('aria-expanded', String(!optionsPanel.hidden));
+});
+
+document.addEventListener('click', (event) => {
+  if (!optionsPanel || optionsPanel.hidden) return;
+  const target = event.target as Element | null;
+  if (!target || optionsPanel.contains(target) || optionsToggle?.contains(target)) return;
+  if (typeof target.closest === 'function' && target.closest('.dialog-shade')) return;
+  closeOptions();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !event.defaultPrevented) closeOptions(true);
+});
+
 void initializeAccess().then((mode) => {
   if (!mode) return;
-  const modeLabel = document.getElementById('display-mode');
-  if (modeLabel) modeLabel.textContent = mode === 'preview' ? '/ Local preview' : '/ Approved browser';
   const clock = initializeDisplayTime();
   let weather: ReturnType<typeof initializeWeatherController> | null = null;
   const location = initializeLocationControls('Weather location', (zipCode) => {
@@ -17,7 +43,7 @@ void initializeAccess().then((mode) => {
   weather = initializeWeatherController(() => location.getSelectedZipCode(), (timeZone) => {
     clock.setTimeZone(timeZone, location.getSelectedZipCode() !== null);
   }, mode === 'managed' ? 'same-origin' : 'omit');
-  initializePhotos();
+  initializePhotos(mode);
 });
 
 const fullscreenButton = document.getElementById('fullscreen-toggle');
@@ -34,8 +60,11 @@ function fullscreenIsActive(): boolean {
 
 function updateFullscreenButton(): void {
   const active = fullscreenIsActive();
+  const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
   fullscreenButton?.setAttribute('aria-pressed', String(active));
-  if (fullscreenLabel) fullscreenLabel.textContent = active ? 'Exit fullscreen' : 'Enter fullscreen';
+  fullscreenButton?.setAttribute('aria-label', label);
+  fullscreenButton?.setAttribute('title', label);
+  if (fullscreenLabel) fullscreenLabel.textContent = label;
 }
 
 function fullscreenError(): void {
@@ -63,7 +92,10 @@ function toggleFullscreen(): void {
   }
 }
 
-fullscreenButton?.addEventListener('click', toggleFullscreen);
+fullscreenButton?.addEventListener('click', () => {
+  toggleFullscreen();
+  closeOptions();
+});
 document.addEventListener('fullscreenchange', updateFullscreenButton);
 document.addEventListener('mozfullscreenchange', updateFullscreenButton as EventListener);
 document.addEventListener('fullscreenerror', fullscreenError);

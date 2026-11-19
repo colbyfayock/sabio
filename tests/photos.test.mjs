@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { build } from 'esbuild';
 
@@ -69,7 +70,7 @@ class ImageElement extends Element {
   }
 }
 
-function browser({ preferences = photoPreferences(), storage = memoryStorage(), hidden = false, storageBlocked = false } = {}) {
+function browser({ preferences = photoPreferences(), storage = memoryStorage(), hidden = false, storageBlocked = false, mode = 'preview', fetcher } = {}) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, id === 'photoA' || id === 'photoB' ? new ImageElement() : new Element());
@@ -79,7 +80,6 @@ function browser({ preferences = photoPreferences(), storage = memoryStorage(), 
   const document = {
     hidden,
     getElementById: element,
-    querySelector(selector) { return selector === '.page-shell' ? element('page-shell') : null; },
     addEventListener(name, callback) {
       documentListeners.set(name, [...(documentListeners.get(name) || []), callback]);
     },
@@ -87,10 +87,6 @@ function browser({ preferences = photoPreferences(), storage = memoryStorage(), 
       for (const callback of documentListeners.get(name) || []) callback(event);
     },
   };
-  element('photo-dialog').hidden = true;
-  element('photo-dialog').querySelectorAll = () => [element('photo-submit'), element('photo-urls'), element('photo-hold')];
-  element('page-shell').querySelectorAll = () => [];
-
   const timers = new Map();
   const windowListeners = new Map();
   let nextTimer = 0;
@@ -108,9 +104,9 @@ function browser({ preferences = photoPreferences(), storage = memoryStorage(), 
     clearTimeout(id) { timers.delete(id); },
     addEventListener(name, callback) { windowListeners.set(name, callback); },
   };
-  const context = { PhotosModule: undefined, document, window, URL, Map, Array, String, Number, Boolean };
+  const context = { PhotosModule: undefined, document, window, URL, Map, Array, String, Number, Boolean, AbortController, fetch: fetcher };
   vm.runInNewContext(photosSource, context);
-  context.PhotosModule.initializePhotos();
+  context.PhotosModule.initializePhotos(mode);
 
   return {
     document, elements, timers, window,
@@ -127,11 +123,6 @@ function browser({ preferences = photoPreferences(), storage = memoryStorage(), 
       image.onload?.();
     },
     fail(image) { image.onerror?.(); },
-    save(urls, holdSeconds = 10) {
-      element('photo-urls').value = urls.join('\n');
-      element('photo-hold').value = String(holdSeconds);
-      element('photo-form').fire('submit');
-    },
   };
 }
 
@@ -149,6 +140,19 @@ test('photo preferences enforce URL, count, and hold-time bounds', () => {
   }
 });
 
+test('default rotation is ten minutes and only the old built-in default is upgraded', () => {
+  assert.equal(defaultPhotoPreferences().holdSeconds, 600);
+  const sampleStorage = memoryStorage({
+    [PHOTO_STORAGE_KEY]: JSON.stringify({ version: 1, urls: defaultPhotoPreferences().urls, holdSeconds: 20 }),
+  });
+  assert.equal(readPhotoPreferences(sampleStorage).preferences.holdSeconds, 600);
+
+  const customStorage = memoryStorage({
+    [PHOTO_STORAGE_KEY]: JSON.stringify(photoPreferences(['https://photos.example.org/custom.jpg'], 20)),
+  });
+  assert.equal(readPhotoPreferences(customStorage).preferences.holdSeconds, 20);
+});
+
 test('photo preferences reject insecure, credentialed, fragmented, and local URL forms', () => {
   for (const url of [
     'http://photos.example.org/image.jpg',
@@ -163,6 +167,15 @@ test('photo preferences reject insecure, credentialed, fragmented, and local URL
   ]) {
     assert.equal(validatePhotoPreferences(photoPreferences([url])), false, `Expected ${url} to be rejected`);
   }
+});
+
+test('photo area has only transparent tap zones and no source editor UI', async () => {
+  const html = await readFile('web/index.html', 'utf8');
+  const css = await readFile('web/styles.css', 'utf8');
+  assert.match(html, /id="photo-previous"[^>]*><span class="visually-hidden">Previous photo/);
+  assert.match(html, /id="photo-next"[^>]*><span class="visually-hidden">Next photo/);
+  assert.doesNotMatch(html, /id="photo-open"|id="photo-dialog"|id="photo-form"|id="pause-photos"|id="next-photo"|id="photo-credit"|class="scene-controls"/);
+  assert.match(css, /\.photo-zone:hover, \.photo-zone:focus, \.photo-zone:active \{[^}]*outline: none; background: transparent/);
 });
 
 test('photo preference reads use defaults for malformed records and blocked storage', () => {
@@ -190,26 +203,22 @@ test('saving photo preferences validates input and reports blocked persistence',
   assert.equal(savePhotoPreferences(() => { throw new Error('blocked'); }, photoPreferences()), false);
 });
 
-test('the slideshow loads images, pauses rotation, and advances on demand', () => {
-  const prefs = photoPreferences();
+test('left/right photo zones navigate and rotation defaults to a ten-minute hold', () => {
+  const prefs = photoPreferences(undefined, 600);
   const page = browser({ preferences: prefs, storage: memoryStorage({ [PHOTO_STORAGE_KEY]: JSON.stringify(prefs) }) });
   const first = page.image('photoA');
   assert.equal(first.src, prefs.urls[0]);
   page.complete(first);
   assert.equal(first.className, 'photo active');
-  assert.ok([...page.timers.values()].some((timer) => timer.delay === 11200));
+  assert.ok([...page.timers.values()].some((timer) => timer.delay === 601200));
 
-  page.element('pause-photos').fire('click');
-  assert.equal(page.element('pause-photos').textContent, 'Play');
-  assert.equal(page.element('pause-photos').getAttribute('aria-pressed'), 'true');
-  assert.equal([...page.timers.values()].some((timer) => timer.delay === 11200), false);
-
-  page.element('next-photo').fire('click');
+  page.element('photo-previous').fire('click');
   const second = page.image('photoB');
   assert.equal(second.src, prefs.urls[1]);
   page.complete(second);
   assert.equal(second.className, 'photo active');
-  assert.equal([...page.timers.values()].some((timer) => timer.delay === 11200), false);
+  page.element('photo-next').fire('click');
+  assert.equal(page.image('photoA').src, prefs.urls[0]);
 });
 
 test('photo load failures are bounded and a failed replacement keeps the last good frame', () => {
@@ -244,23 +253,10 @@ test('photo load timeout retries after a bounded delay instead of looping immedi
   assert.ok([...page.timers.values()].some((timer) => timer.delay === 15000));
 });
 
-test('saving changed photo preferences invalidates an old image callback', () => {
-  const old = photoPreferences();
-  const page = browser({ preferences: old, storage: memoryStorage({ [PHOTO_STORAGE_KEY]: JSON.stringify(old) }) });
-  const image = page.image('photoA');
-  const staleLoad = image.onload;
-  const nextUrl = 'https://photos.example.org/new.jpg';
-
-  page.element('photo-open').fire('click');
-  page.save([nextUrl], 15);
-  assert.equal(image.src, nextUrl);
-  const status = page.element('photo-status').textContent;
-  image.naturalWidth = 1200;
-  staleLoad();
-
-  assert.equal(image.src, nextUrl);
-  assert.equal(image.className, 'photo');
-  assert.equal(page.element('photo-status').textContent, status);
+test('existing browser-local sources remain loaded without a source editor', () => {
+  const prefs = photoPreferences(['https://photos.example.org/personal.jpg'], 600);
+  const page = browser({ preferences: prefs, storage: memoryStorage({ [PHOTO_STORAGE_KEY]: JSON.stringify(prefs) }) });
+  assert.equal(page.image('photoA').src, prefs.urls[0]);
 });
 
 test('hidden documents do not rotate photos until they become visible', () => {
@@ -280,11 +276,28 @@ test('hidden documents do not rotate photos until they become visible', () => {
   assert.ok([...page.timers.values()].some((timer) => timer.delay === 10000));
 });
 
-test('blocked photo storage still applies visit-only settings with a visible notice', () => {
+test('blocked photo storage still shows built-in sample photos with a visible notice', () => {
   const page = browser({ storageBlocked: true });
-  page.element('photo-open').fire('click');
-  const chosen = 'https://photos.example.org/visit.jpg';
-  page.save([chosen]);
-  assert.equal(page.image('photoA').src, chosen);
-  assert.match(page.element('photo-status').textContent, /visit only/);
+  assert.equal(page.image('photoA').src, defaultPhotoPreferences().urls[0]);
+  assert.match(page.element('photo-status').textContent, /could not be read/);
+});
+
+test('managed slideshow uses only authenticated private photo paths and falls back to samples on failure', async () => {
+  const privatePhoto = '/api/display/photos/123e4567-e89b-12d3-a456-426614174000';
+  const managed = browser({
+    mode: 'managed',
+    fetcher: async (url, options) => {
+      assert.equal(url, '/api/display/photos');
+      assert.equal(options.credentials, 'same-origin');
+      assert.equal(options.cache, 'no-store');
+      return Response.json({ photos: [{ id: '123e4567-e89b-12d3-a456-426614174000', url: privatePhoto }] });
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(managed.image('photoA').src, privatePhoto);
+
+  const fallback = browser({ mode: 'managed', fetcher: async () => new Response('{}', { status: 401 }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(fallback.image('photoA').src, /^https:\/\/images\.unsplash\.com\//);
+  assert.match(fallback.element('photo-status').textContent, /Private photos are unavailable/);
 });

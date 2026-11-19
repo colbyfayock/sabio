@@ -3,10 +3,11 @@
 The checked-in default remains a **local preview**. The owner-managed Worker now runs
 owner-initiated pairing (deployed 2026-10-23); production revocation of the test session
 and frame validation are pending. This runbook records release gates, not permission to
-make further deployments or create resources. The intended first release is a
-single-owner Horizon dashboard with public photos,
-ZIP-driven Fahrenheit weather/time, and owner-issued pairings for display browsers.
-There is no calendar, task integration, private upload, or cloud-album sync.
+make further deployments or create resources. The intended release is a single-owner
+Horizon dashboard with ZIP-driven Fahrenheit weather/time and owner-issued display
+pairings. Google Photos Picker imports are deployed as explicit still-photo snapshots;
+the owner-run OAuth/import/display flow and frame test remain unverified. There is no
+calendar/task integration or automatic whole-album sync.
 
 ## Initial deployment status
 
@@ -44,6 +45,30 @@ bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowli
 (the custom hostname and the `workers.dev` address); both serve the security headers
 and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
 
+Private Google Photos imports are deployed to the existing Worker. Production bucket
+`sabio-private-photos` is bound only to the Worker, `r2.dev` is disabled, and additive
+migrations `0005_private_photos.sql` and `0006_google_photo_connection.sql` are applied.
+The existing production client ID and secrets are bound to the active version. The app
+requests only `photospicker.mediaitems.readonly`, encrypts the refresh token in D1, and
+offers **Disconnect Google Photos**; already imported photos remain in R2 after
+disconnect. The owner searches for an album and explicitly selects up to 12 photos per
+snapshot import; it does not sync albums continuously. While Google's OAuth app is in
+Testing, refresh tokens can expire after seven days, after which Sabio offers reconnect.
+
+Production smoke checks pass for the public shell/health, Access redirects on `/admin`
+and `/api/admin/photos`, and unauthenticated photo-list denial. No real owner OAuth
+callback, Picker selection/import, paired-display image load, deletion/revocation browser
+test or frame test has yet been completed. A strict regular deploy found route/config
+drift, so this release used Wrangler Versions and left routes/triggers unchanged. Reconcile
+that drift before a future standard deploy. The active version also includes the existing
+uncommitted Horizon UI/weather refinements. No commit, paid-plan change or DNS change was
+made.
+
+For future OAuth clients, use the Google Photos **Picker API** (not the separate Google
+Picker UI API), a Web application client, and exact HTTPS callback
+`<APP_ORIGIN>/api/admin/photos/callback`. Keep Client IDs as Worker vars and secrets out of
+source control. Maintain private-only bucket access and verify account usage controls.
+
 Owner-initiated pairing reuses the existing enrollment table and requires no new
 migration. Existing display sessions remain valid. Legacy display-initiated pending
 rows are deliberately not claimable by the new route and expire through normal cleanup;
@@ -72,9 +97,11 @@ on loopback. Inspect the output allowlist: display/admin HTML, CSS, app/admin JS
 no mockups, private settings, captures, secrets, state databases or source maps.
 
 Use synthetic data in browser tests. Verify both themes at 1280×800 and a small
-viewport; ZIP Save/Cancel/Reset; keyboard focus trapping/restoration in both dialogs;
-fullscreen entry/exit; photo Pause/Next, reload persistence, broken source recovery;
-and weather timeout/offline/stale behavior. Test timezone/DST and theme boundaries.
+viewport; Sabio options open/close; ZIP Save/Cancel/Reset; keyboard focus trapping/
+restoration in both dialogs; fullscreen entry/exit from Display options; transparent
+left/right photo navigation, ten-minute default hold, reload persistence and broken
+source recovery; and weather refresh/timeout/offline/stale behavior. Test timezone/DST
+and theme boundaries. There is no photo-source editor in the current UI.
 Inspect captures then delete the exact files immediately. Desktop browser tests do
 not establish Firefox Android 68 compatibility.
 
@@ -105,6 +132,12 @@ Before making the API publicly reachable:
 - Prove denial, forgery resistance, expiry, concurrent pairing, revocation and
   cross-display isolation with automated tests and local runtime checks. Storage or
   identity-provider failures must fail closed, not open a preview bypass.
+- For private photos, verify owner-only OAuth state/callback handling, encrypted
+  refresh-token storage, refresh/reconnect behavior, Google token revocation on
+  disconnect, active Picker cleanup and retention of imported R2 objects. Verify bounded
+  still-image import, metadata sanitization, authenticated private R2 delivery,
+  cross-origin denial and display-revocation denial. Confirm `r2.dev` and public bucket
+  domains are disabled; do not return signed URLs or Google base URLs to clients.
 
 Browser pairing is not hardware attestation. The obsolete/root-accessible frame
 can expose everything displayed to it; use only non-sensitive content in this MVP.

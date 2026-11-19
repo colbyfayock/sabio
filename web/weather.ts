@@ -12,6 +12,19 @@ export interface WeatherController {
   refresh(): void;
 }
 
+export type WeatherIconName = 'clear' | 'moon' | 'partly' | 'partly-night' | 'cloud' | 'fog' | 'rain' | 'snow' | 'storm';
+
+export function weatherIconForCondition(condition: string, isNight = false): WeatherIconName {
+  const value = condition.toLowerCase();
+  if (value.includes('thunder') || value.includes('hail')) return 'storm';
+  if (value.includes('snow') || value.includes('sleet')) return 'snow';
+  if (value.includes('rain') || value.includes('drizzle')) return 'rain';
+  if (value.includes('fog')) return 'fog';
+  if (value.includes('partly')) return isNight ? 'partly-night' : 'partly';
+  if (value.includes('clear') || value.includes('sun')) return isNight ? 'moon' : 'clear';
+  return 'cloud';
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -61,10 +74,22 @@ function errorMessage(error: unknown): string {
 export function initializeWeatherController(getSelectedZipCode: () => string | null, onTimeZone?: (value: string | null) => void, credentials: RequestCredentials = 'omit'): WeatherController {
   const temperatureNode = document.getElementById('temperature');
   const conditionNode = document.getElementById('condition');
-  const rangeNode = document.getElementById('weather-range');
+  const highNode = document.getElementById('weather-high');
+  const lowNode = document.getElementById('weather-low');
+  const weatherIcon = document.getElementById('weather-icon');
+  const weatherIcons: Record<WeatherIconName, HTMLElement | null> = {
+    clear: document.getElementById('weather-icon-clear'),
+    moon: document.getElementById('weather-icon-moon'),
+    partly: document.getElementById('weather-icon-partly'),
+    'partly-night': document.getElementById('weather-icon-partly-night'),
+    cloud: document.getElementById('weather-icon-cloud'),
+    fog: document.getElementById('weather-icon-fog'),
+    rain: document.getElementById('weather-icon-rain'),
+    snow: document.getElementById('weather-icon-snow'),
+    storm: document.getElementById('weather-icon-storm'),
+  };
   const statusNode = document.getElementById('weather-status');
-  const resolvedNode = document.getElementById('weather-resolved');
-  const retryButton = document.getElementById('weather-retry') as HTMLButtonElement | null;
+  const refreshButton = document.getElementById('weather-refresh') as HTMLButtonElement | null;
   let zipCode = normalizeZipCode(getSelectedZipCode());
   let forecast: WeatherForecast | null = null;
   let request: AbortController | null = null;
@@ -89,14 +114,30 @@ export function initializeWeatherController(getSelectedZipCode: () => string | n
   const displayPlaceholder = (): void => {
     setText(temperatureNode, '—°F');
     setText(conditionNode, zipCode ? 'Waiting for live weather' : 'Set ZIP to load weather');
-    setText(rangeNode, 'H —°F · L —°F');
-    setText(resolvedNode, '');
+    setText(highNode, 'H —°F');
+    setText(lowNode, 'L —°F');
+    if (conditionNode) conditionNode.hidden = false;
+    if (weatherIcon) weatherIcon.hidden = true;
+    Object.values(weatherIcons).forEach((icon) => { if (icon) icon.hidden = true; });
+  };
+  const showConditionIcon = (condition: string): void => {
+    if (weatherIcon) {
+      weatherIcon.hidden = false;
+      weatherIcon.setAttribute('aria-label', condition);
+    }
+    const isNight = document.documentElement.getAttribute('data-theme') === 'dark';
+    const selectedIcon = weatherIconForCondition(condition, isNight);
+    (Object.keys(weatherIcons) as WeatherIconName[]).forEach((name) => {
+      const icon = weatherIcons[name];
+      if (icon) icon.hidden = name !== selectedIcon;
+    });
   };
   const showForecast = (value: WeatherForecast): void => {
     setText(temperatureNode, `${Math.round(value.temperatureFahrenheit)}°F`);
-    setText(conditionNode, value.condition);
-    setText(rangeNode, `H ${Math.round(value.highFahrenheit)}°F · L ${Math.round(value.lowFahrenheit)}°F`);
-    setText(resolvedNode, value.locationLabel);
+    setText(highNode, `H ${Math.round(value.highFahrenheit)}°F`);
+    setText(lowNode, `L ${Math.round(value.lowFahrenheit)}°F`);
+    if (conditionNode) conditionNode.hidden = true;
+    showConditionIcon(value.condition);
   };
   const lastForecastDetail = (): string => forecast ? `Showing forecast fetched ${formatTimestamp(forecast.fetchedAt)}.` : '';
   const setWaiting = (): void => {
@@ -200,7 +241,10 @@ export function initializeWeatherController(getSelectedZipCode: () => string | n
     if (!request) void load();
   };
 
-  retryButton?.addEventListener('click', refresh);
+  refreshButton?.addEventListener('click', refresh);
+  document.addEventListener('sabio:themechange', () => {
+    if (forecast) showConditionIcon(forecast.condition);
+  });
   window.addEventListener('online', refresh);
   window.addEventListener('offline', () => {
     cancelTimer();

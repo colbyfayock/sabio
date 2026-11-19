@@ -306,6 +306,7 @@ export async function handleAccessRequest(
   verifyAdmin: (request: Request) => Promise<boolean>,
   origin: string,
   notifyDisplay?: (notice: DisplaySessionNotice) => Promise<void>,
+  additionalAdminHandler?: (request: Request, route: string, now: number) => Promise<Response | null>,
 ): Promise<Response | null> {
   let url: URL;
   let decodedPath: string;
@@ -321,12 +322,15 @@ export async function handleAccessRequest(
   if (!canonical || url.origin !== canonical.origin) return errorResponse(403, 'origin_not_allowed');
   const requestOrigin = request.headers.get('Origin');
   if (requestOrigin !== null && requestOrigin !== canonical.origin) return errorResponse(403, 'origin_not_allowed');
-  if (url.search || url.href.includes('?') || url.hash) return errorResponse(400, 'invalid_request');
+  const queryRoutes = new Set(['/api/admin/photos/callback', '/api/admin/photos/status']);
+  if ((!queryRoutes.has(decodedPath) && (url.search || url.href.includes('?'))) || url.hash) return errorResponse(400, 'invalid_request');
   if (decodedPath !== url.pathname) return errorResponse(400, 'invalid_request');
 
   const route = decodedPath;
   const isMutation = request.method === 'POST'
-    && ['/api/enrollment/claim', '/api/admin/pairing', '/api/admin/revoke', '/api/admin/label'].includes(route);
+    && ['/api/enrollment/claim', '/api/admin/pairing', '/api/admin/revoke', '/api/admin/label',
+      '/api/admin/photos/connect', '/api/admin/photos/import', '/api/admin/photos/cancel',
+      '/api/admin/photos/delete', '/api/admin/photos/reorder', '/api/admin/photos/disconnect'].includes(route);
   if (isMutation && request.headers.get('Origin') !== canonical.origin) {
     return errorResponse(403, 'origin_not_allowed');
   }
@@ -337,12 +341,38 @@ export async function handleAccessRequest(
     '/api/admin/pairing': 'POST',
     '/api/admin/revoke': 'POST',
     '/api/admin/label': 'POST',
+    '/api/admin/photos': 'GET',
+    '/api/admin/photos/connect': 'POST',
+    '/api/admin/photos/callback': 'GET',
+    '/api/admin/photos/status': 'GET',
+    '/api/admin/photos/import': 'POST',
+    '/api/admin/photos/cancel': 'POST',
+    '/api/admin/photos/delete': 'POST',
+    '/api/admin/photos/reorder': 'POST',
+    '/api/admin/photos/disconnect': 'POST',
     '/api/display': 'GET',
   };
   const expectedMethod = knownRoutes[route];
   if (!expectedMethod) return errorResponse(404, 'not_found');
   const methodError = routeMethod(request, expectedMethod);
   if (methodError) return methodError;
+
+  if (route === '/api/admin/photos/callback') {
+    const allowed = new Set(['code', 'state', 'scope', 'authuser', 'prompt', 'iss', 'error', 'error_description']);
+    for (const key of url.searchParams.keys()) {
+      if (!allowed.has(key) || url.searchParams.getAll(key).length !== 1 || (url.searchParams.get(key) || '').length > 4096) {
+        return errorResponse(400, 'invalid_request');
+      }
+    }
+    if (url.searchParams.has('state') !== Boolean(url.searchParams.get('code') || url.searchParams.get('error'))) {
+      return errorResponse(400, 'invalid_request');
+    }
+    if (url.searchParams.has('iss') && url.searchParams.get('iss') !== 'https://accounts.google.com') {
+      return errorResponse(400, 'invalid_request');
+    }
+  } else if (route === '/api/admin/photos/status') {
+    if (url.searchParams.size !== 1 || url.searchParams.getAll('id').length !== 1) return errorResponse(400, 'invalid_request');
+  }
 
   if (route === '/api/display') {
     try {
@@ -462,6 +492,15 @@ export async function handleAccessRequest(
     const ownerKey = 'admin-owner';
     if (!await takeRateLimit(db, ownerKey, now, RATE_MINUTE_SECONDS, 30)) {
       return errorResponse(429, 'rate_limited', { 'Retry-After': String(RATE_MINUTE_SECONDS) });
+    }
+
+    if (route.startsWith('/api/admin/photos/')) {
+      const response = await additionalAdminHandler?.(request, route, now);
+      return response || errorResponse(404, 'not_found');
+    }
+    if (route === '/api/admin/photos') {
+      const response = await additionalAdminHandler?.(request, route, now);
+      return response || errorResponse(404, 'not_found');
     }
 
     if (route === '/api/admin/label') {
@@ -630,6 +669,23 @@ export async function limitDisplayBootstrap(
     const now = nowSeconds();
     const sessionHash = await hash(`bootstrap-session:${sessionId}`);
     return await takeRateLimit(db, `bootstrap:${sessionHash}`, now, RATE_MINUTE_SECONDS, 12);
+  } catch {
+    return false;
+  }
+}
+
+/** Bound private photo-list and object reads per active display session. */
+export async function limitDisplayPhotos(
+  request: Request,
+  db: D1Database,
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const url = new URL(request.url);
+    if (url.protocol !== 'https:' || !/^[0-9a-f-]{36}$/i.test(sessionId)) return false;
+    const now = nowSeconds();
+    const sessionHash = await hash(`photos-session:${sessionId}`);
+    return await takeRateLimit(db, `photos:${sessionHash}`, now, RATE_MINUTE_SECONDS, 120);
   } catch {
     return false;
   }

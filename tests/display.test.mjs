@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { build } from 'esbuild';
 
@@ -32,6 +33,7 @@ class Element {
   contains(node) { return this === node || this.children.some((child) => child.contains(node)); }
   addEventListener(name, callback) { this.listeners.set(name, [...(this.listeners.get(name) || []), callback]); }
   fire(name, event = { preventDefault() {} }) { for (const callback of this.listeners.get(name) || []) callback(event); }
+  dispatchEvent(event) { this.fire(event.type, event); return true; }
 }
 
 function browser() {
@@ -52,10 +54,11 @@ function browser() {
   document.createElement = () => new Element();
   document.documentElement = new Element();
   element('location-dialog').hidden = true;
-  element('photo-dialog').hidden = true;
   element('access-dialog').hidden = true;
+  element('display-options').hidden = true;
+  element('display-options-toggle').setAttribute('aria-expanded', 'false');
   element('location-dialog').children = ['location-input', 'location-form', 'location-save', 'location-cancel', 'location-reset'].map(element);
-  shell.querySelectorAll = () => ['location-open', 'fullscreen-toggle', 'retry-button'].map(element);
+  shell.querySelectorAll = () => ['display-options-toggle', 'location-open', 'fullscreen-toggle', 'weather-refresh'].map(element);
   const window = new Element();
   const timers = new Map();
   let nextTimer = 0;
@@ -69,7 +72,7 @@ function browser() {
     respond: async (url) => new Response(JSON.stringify(url === '/api/bootstrap' ? { mode: 'preview' } : fixture())),
     start() {
       vm.runInNewContext(source, {
-        document, window, navigator, AbortController, URL,
+        document, window, navigator, AbortController, URL, Event,
         fetch: (...args) => { calls.push(args); return instance.respond(...args); },
       });
     },
@@ -98,6 +101,39 @@ test('Horizon checks bootstrap, starts a clock and photos, but never polls demo 
   assert.equal(page.hasTimer(60000), false);
 });
 
+test('display options are opened from the Sabio wordmark and contain ZIP, weather and fullscreen actions', async () => {
+  const html = await readFile('web/index.html', 'utf8');
+  assert.match(html, /<title>Sabio<\/title>/);
+  assert.doesNotMatch(html, /display-mode|class="folio"|>Horizon</);
+  assert.doesNotMatch(html, /class="eyebrow">Local time|id="themeMode"|id="appearance-status"|>Appearance</);
+  assert.match(html, /id="display-options-toggle"[^>]*aria-controls="display-options"/);
+  assert.match(html, /id="display-options"[^>]*hidden/);
+  assert.match(html, /id="fullscreen-toggle"[\s\S]*id="fullscreen-label">Enter fullscreen/);
+  assert.match(html, /id="location-open"/);
+  assert.match(html, /id="weather-refresh"[\s\S]*id="weather-status"/);
+  assert.doesNotMatch(html, /id="photo-open"|id="photo-dialog"/);
+  assert.doesNotMatch(html, /class="weather-label"|>Weather</);
+  assert.ok(html.indexOf('id="weather-status"') < html.indexOf('class="options-attribution"'));
+  assert.doesNotMatch(html, /id="weather-resolved"/);
+});
+
+test('Sabio options open by tapping the wordmark and close on Escape or outside click', async () => {
+  const page = browser();
+  page.start();
+  await page.settle();
+  const panel = page.element('display-options');
+  const toggle = page.element('display-options-toggle');
+  toggle.fire('click');
+  assert.equal(panel.hidden, false);
+  assert.equal(toggle.attributes['aria-expanded'], 'true');
+  page.document.fire('keydown', { key: 'Escape', preventDefault() {} });
+  assert.equal(panel.hidden, true);
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
+  toggle.fire('click');
+  page.document.fire('click', { target: page.element('temperature') });
+  assert.equal(panel.hidden, true);
+});
+
 test('fullscreen reflects actual browser events and exposes a rejection', async () => {
   const page = browser();
   page.document.documentElement.requestFullscreen = async () => {
@@ -113,8 +149,11 @@ test('fullscreen reflects actual browser events and exposes a rejection', async 
   page.element('fullscreen-toggle').fire('click');
   await page.settle();
   assert.equal(page.element('fullscreen-toggle').attributes['aria-pressed'], 'true');
+  assert.equal(page.element('fullscreen-toggle').attributes['aria-label'], 'Exit fullscreen');
+  assert.equal(page.element('fullscreen-label').textContent, 'Exit fullscreen');
   page.element('fullscreen-toggle').fire('click');
   await page.settle();
+  assert.equal(page.element('fullscreen-toggle').attributes['aria-label'], 'Enter fullscreen');
   assert.equal(page.element('fullscreen-label').textContent, 'Enter fullscreen');
   page.document.documentElement.requestFullscreen = async () => { throw new Error('Denied'); };
   page.element('fullscreen-toggle').fire('click');
@@ -136,7 +175,9 @@ test('prefixed Firefox fullscreen fallback follows actual state without a Promis
   await page.settle();
   page.element('fullscreen-toggle').fire('click');
   assert.equal(page.element('fullscreen-toggle').attributes['aria-pressed'], 'true');
+  assert.equal(page.element('fullscreen-toggle').attributes['aria-label'], 'Exit fullscreen');
   page.element('fullscreen-toggle').fire('click');
+  assert.equal(page.element('fullscreen-toggle').attributes['aria-label'], 'Enter fullscreen');
   assert.equal(page.element('fullscreen-label').textContent, 'Enter fullscreen');
 });
 

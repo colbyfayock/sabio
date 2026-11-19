@@ -10,7 +10,7 @@ const moduleBuild = await build({
   entryPoints: ['web/display-time.ts'], bundle: true, format: 'esm', target: 'firefox68', write: false,
 });
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(moduleBuild.outputFiles[0].text).toString('base64')}`;
-const { THEME_STORAGE_NAME, displayTime, themeForHour } = await import(moduleUrl);
+const { displayTime, themeForHour } = await import(moduleUrl);
 
 const initializeBuild = await build({
   entryPoints: ['web/display-time.ts'], bundle: true, format: 'iife', globalName: 'DisplayTimeModule', target: 'firefox68', write: false,
@@ -54,18 +54,11 @@ test('displayTime resolves both sides of spring-forward and fall-back transition
   assert.equal(fallAfter.date, 'Sunday, November 3');
 });
 
-test('automatic theme uses light from 7 through 18 and dark at night', () => {
-  assert.equal(themeForHour('auto', 6), 'dark');
-  assert.equal(themeForHour('auto', 7), 'light');
-  assert.equal(themeForHour('auto', 18), 'light');
-  assert.equal(themeForHour('auto', 19), 'dark');
-});
-
-test('manual theme modes override the hour boundaries', () => {
-  for (const hour of [0, 6, 7, 18, 19, 23]) {
-    assert.equal(themeForHour('light', hour), 'light');
-    assert.equal(themeForHour('dark', hour), 'dark');
-  }
+test('appearance changes automatically at the existing day/night boundaries', () => {
+  assert.equal(themeForHour(6), 'dark');
+  assert.equal(themeForHour(7), 'light');
+  assert.equal(themeForHour(18), 'light');
+  assert.equal(themeForHour(19), 'dark');
 });
 
 function fixedDate(iso) {
@@ -90,11 +83,18 @@ function displayBrowser({ storage, blocked = false, now = '2024-06-01T11:00:00.0
   const root = {
     attributes: {},
     setAttribute(name, value) { this.attributes[name] = value; },
+    getAttribute(name) { return this.attributes[name] ?? null; },
   };
+  const documentListeners = new Map();
+  const themeChanges = [];
   const document = {
     documentElement: root,
     getElementById: element,
-    addEventListener() {},
+    addEventListener(name, callback) { documentListeners.set(name, callback); },
+    dispatchEvent(event) {
+      if (event.type === 'sabio:themechange') themeChanges.push(root.attributes['data-theme']);
+      documentListeners.get(event.type)?.(event);
+    },
   };
   const window = {
     get localStorage() {
@@ -103,10 +103,10 @@ function displayBrowser({ storage, blocked = false, now = '2024-06-01T11:00:00.0
     },
     setInterval() { return 1; },
   };
-  const context = { DisplayTimeModule: undefined, document, window, Date: fixedDate(now), Intl };
+  const context = { DisplayTimeModule: undefined, document, window, Date: fixedDate(now), Event, Intl };
   vm.runInNewContext(initializeSource, context);
   const controller = context.DisplayTimeModule.initializeDisplayTime();
-  return { controller, element, root, document };
+  return { controller, element, root, document, themeChanges };
 }
 
 function memoryStorage(initial = {}) {
@@ -118,31 +118,28 @@ function memoryStorage(initial = {}) {
   };
 }
 
-test('appearance preference initializes and survives a reload', () => {
-  const storage = memoryStorage({ [THEME_STORAGE_NAME]: 'dark' });
-  const first = displayBrowser({ storage, now: '2024-06-01T11:00:00.000Z' });
-  assert.equal(first.element('themeMode').value, 'dark');
-  assert.equal(first.root.attributes['data-theme'], 'dark');
+test('legacy manual appearance settings are ignored and automatic theme needs no storage', () => {
+  const storage = memoryStorage({ 'sabio.appearance.v1': 'dark' });
+  const day = displayBrowser({ storage, now: '2024-06-01T11:00:00.000Z' });
+  assert.equal(day.root.attributes['data-theme'], 'light');
+  assert.equal(storage.getItem('sabio.appearance.v1'), 'dark');
 
-  first.element('themeMode').value = 'auto';
-  first.element('themeMode').fire('change');
-  assert.equal(storage.getItem(THEME_STORAGE_NAME), 'auto');
-
-  const reloaded = displayBrowser({ storage, now: '2024-06-01T11:00:00.000Z' });
-  assert.equal(reloaded.element('themeMode').value, 'auto');
-  assert.equal(reloaded.root.attributes['data-theme'], 'light');
+  const night = displayBrowser({ storage, blocked: true, now: '2024-06-01T23:00:00.000Z' });
+  assert.equal(night.root.attributes['data-theme'], 'dark');
+  assert.equal(night.element('themeMode').listeners.size, 0);
 });
 
-test('blocked appearance storage falls back to visit-only state and remains usable', () => {
-  const page = displayBrowser({ storage: memoryStorage(), blocked: true, now: '2024-06-01T23:00:00.000Z' });
-  assert.equal(page.element('themeMode').value, 'auto');
-  assert.equal(page.root.attributes['data-theme'], 'dark');
-  assert.match(page.element('appearance-status').textContent, /lasts for this visit/);
+test('automatic theme announces day/night changes so dependent icons can update', () => {
+  const page = displayBrowser({ storage: memoryStorage(), now: '2024-06-01T11:00:00.000Z' });
+  assert.deepEqual(page.themeChanges, ['light']);
 
-  page.element('themeMode').value = 'light';
-  page.element('themeMode').fire('change');
-  assert.equal(page.root.attributes['data-theme'], 'light');
-  assert.match(page.element('appearance-status').textContent, /lasts for this visit/);
+  page.controller.setTimeZone('Asia/Tokyo', true);
+  assert.equal(page.root.attributes['data-theme'], 'dark');
+  assert.deepEqual(page.themeChanges, ['light', 'dark']);
+
+  page.controller.setTimeZone('America/Los_Angeles', true);
+  assert.equal(page.root.attributes['data-theme'], 'dark');
+  assert.deepEqual(page.themeChanges, ['light', 'dark']);
 });
 
 test('timezone updates refresh both the displayed label and all time fields', () => {

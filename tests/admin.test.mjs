@@ -27,18 +27,32 @@ class Element {
   async fire(type, event = { preventDefault() {} }) { return this.listeners.get(type)?.(event); }
 }
 
-function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, status: 201 }) {
+function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, status: 201 }, photos = { photos: [], activeImport: null, googleConnected: false }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
     return elements.get(id);
   };
   const document = { getElementById: element, createElement: (tag) => new Element(tag) };
-  const window = { setTimeout: () => 1, clearTimeout() {} };
+  const navigations = [];
+  const window = { setTimeout: () => 1, clearTimeout() {}, location: { search: '', assign(value) { navigations.push(value); } } };
   const calls = [];
   const fetch = async (path, options = {}) => {
     calls.push({ path, options });
     if (path === '/api/admin/displays') return { ok: true, status: 200, json: async () => ({ displays }) };
+    if (path === '/api/admin/photos') return { ok: true, status: 200, json: async () => photos };
+    if (path === '/api/admin/photos/connect') {
+      if (photos.googleConnected) {
+        photos.activeImport = { id: '123e4567-e89b-12d3-a456-426614174000', pickerUri: 'https://photos.google.com/picker?session=synthetic' };
+        return { ok: true, status: 200, json: async () => ({ status: 'picker_ready' }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test' }) };
+    }
+    if (path === '/api/admin/photos/disconnect') {
+      photos.googleConnected = false;
+      photos.activeImport = null;
+      return { ok: true, status: 200, json: async () => ({ disconnected: true, googleRevoked: true }) };
+    }
     if (path === '/api/admin/label') return { ok: true, status: 200, json: async () => ({ status: 'updated' }) };
     if (path === '/api/admin/revoke') return { ok: true, status: 204, json: async () => null };
     if (path === '/api/admin/pairing') {
@@ -50,9 +64,43 @@ function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, 
     }
     throw new Error('unexpected_route');
   };
-  vm.runInNewContext(source, { document, window, fetch, AbortController, Date, JSON, Number, String, Boolean, Array, Error });
-  return { element, calls };
+  vm.runInNewContext(source, { document, window, fetch, AbortController, URL, URLSearchParams, Date, JSON, Number, String, Boolean, Array, Error });
+  return { element, calls, navigations };
 }
+
+test('admin validates and opens the owner-only Picker URL from a Google Photos import', async () => {
+  const app = start([], undefined, {
+    photos: [],
+    activeImport: { id: '123e4567-e89b-12d3-a456-426614174000', pickerUri: 'https://photos.google.com/picker?session=synthetic' },
+    googleConnected: true,
+  });
+  await new Promise(setImmediate);
+  assert.equal(app.element('photos-import-panel').hidden, false);
+  assert.equal(app.element('photos-picker-link').href, 'https://photos.google.com/picker?session=synthetic');
+  assert.equal(app.element('photos-disconnect').hidden, false);
+});
+
+test('connected Google Photos can open another Picker session without OAuth and can disconnect', async () => {
+  const app = start([], undefined, { photos: [], activeImport: null, googleConnected: true });
+  await new Promise(setImmediate);
+  assert.equal(app.element('photos-connect').textContent, 'Open Google Photos Picker');
+  await app.element('photos-connect').fire('click');
+  await new Promise(setImmediate);
+  assert.equal(app.navigations.length, 0, 'reusing the saved connection does not send the user through OAuth');
+  assert.equal(app.element('photos-import-panel').hidden, false);
+  await app.element('photos-disconnect').fire('click');
+  await new Promise(setImmediate);
+  assert.equal(app.element('photos-disconnect').hidden, true);
+  assert.equal(app.element('photos-connect').textContent, 'Connect Google Photos');
+});
+
+test('unconnected Google Photos starts the OAuth authorization flow', async () => {
+  const app = start([]);
+  await new Promise(setImmediate);
+  await app.element('photos-connect').fire('click');
+  await new Promise(setImmediate);
+  assert.equal(new URL(app.navigations[0]).hostname, 'accounts.google.com');
+});
 
 test('revoked browser entries are grouped in a closed history disclosure without active controls', async () => {
   const app = start([

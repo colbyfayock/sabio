@@ -8,8 +8,10 @@ owner-managed deployment now serves owner-initiated pairing; unauthenticated rou
 checks passed and an owner-run pairing succeeded with replay denied and notification
 confirmed. Revocation of that test session remains pending. Earlier deployment checks
 covered the prior display-initiated flow. Access-token lifetime, cleanup, production
-logs and hardware remain unverified. Private integrations remain future work; this is
-not standing authorization for more cloud changes.
+logs and hardware remain unverified. Google Photos Picker snapshot imports are deployed
+with a private R2 bucket and additive D1 migrations `0005`/`0006`; production smoke tests
+verify Access gates and unauthenticated photo denial. A real owner OAuth/import/display
+test remains unverified. This is not standing authorization for further cloud changes.
 
 ## Current local implementation
 
@@ -27,7 +29,7 @@ production config stays ignored under `private/`, with only the six allowlisted
 static assets uploaded; no source maps or private setup credentials are deployed.
 
 The IIFE frontend targets Firefox 68 at build time but is not validated on actual
-Firefox 68 hardware. Horizon places time/weather in the left 38% and a single
+Firefox 68 hardware. The Horizon layout places time/weather in the left 38% and a single
 photograph in the right 62%. The clock/date and automatic theme use the ZIP-derived
 IANA timezone from the weather response; browser-local fallback is labeled while
 unresolved. The timezone remains in memory, not persistent offline state.
@@ -77,16 +79,42 @@ in-memory state with a visible warning. The entered ZIP+4 preference is not stor
 a server-side user setting; the public forecast cache is separate. This is not an
 authenticated preference or protected identity. Trusted per-display settings remain future work.
 
-Photo preferences (`sabio.photos.v1`) store 1–12 public HTTPS URLs and a bounded
-hold duration locally. Images are requested directly by the browser with no referrer;
+Photo preferences (`sabio.photos.v1`) retain 1–12 public HTTPS URLs and a bounded hold
+duration locally for compatibility, but there is no source editor in the UI. The default
+source is the built-in public sample set and the default hold is 10 minutes; the old
+built-in 20-second default upgrades automatically, while explicit custom durations are
+preserved. Tap the photo's left/right halves to navigate; tap the `sabio` wordmark for
+ZIP and fullscreen options. Refresh and last-updated status are in that options panel.
+Images are requested directly by the browser with no referrer;
 the Worker never fetches user-supplied photo URLs. The CSP allows HTTPS images but
 keeps scripts/styles/API connections same-origin. URL checks do not guarantee public
 DNS resolution or safe redirects, nor constrain decoded image memory. Use small JPEGs,
 not sensitive URLs or token-bearing links. No uploads or private album integration.
 Two image layers use generation-scoped load/fade callbacks, 15-second load timeouts,
 bounded source attempts and delayed retries. Last good photos remain on load errors.
-Photo hold, source list and appearance persist; pause is visit-only. Auto appearance
-uses 07:00–19:00 in the displayed timezone. Hidden pages stop photo rotation.
+Existing photo source URLs and hold duration persist in this browser and remain read-only
+in the current UI. Appearance is automatic only, using light 07:00–18:59 and dark
+19:00–06:59 in the displayed timezone; manual modes are no longer exposed or stored.
+Hidden pages stop photo rotation.
+
+Managed mode can load owner-imported photo IDs from `/api/display/photos` and fetch each
+image from `/api/display/photos/{id}`. The Worker verifies the paired display session on
+every request, reads objects using the private `PHOTO_BUCKET` binding, sets `no-store`
+and safe image headers, and exposes neither R2 keys nor Google URLs. If the library is
+empty or unavailable, the display uses the built-in samples. `/admin` starts a Google
+OAuth server-side authorization-code flow scoped to
+`photospicker.mediaitems.readonly`; it displays the Google Picker URI and imports
+selected images one at a time. A new Picker session is needed to add more. The Picker
+supports searching for an album and selecting photos, not a whole-album/live-sync API.
+The long-lived Google refresh token is AES-GCM encrypted in D1 until the owner disconnects;
+per-import access tokens, Google session IDs and picker URIs are also encrypted and removed
+on completion/expiry. Disconnect attempts Google revocation, clears any active Picker job,
+and leaves already-imported objects intact. State is one-use. Image bytes are bounded and
+common metadata chunks are removed before storage. Migrations `0005_private_photos.sql`
+and `0006_google_photo_connection.sql` and the private R2 binding are deployed. R2 and
+application quotas do not provide end-to-end encryption or prevent Cloudflare account
+administrators from provider-level access; authenticated display use has not yet been
+owner-tested.
 
 Managed bootstrap check-ins update a coarse browser/OS/device-category label derived
 from the untrusted User-Agent, at most once per five minutes; raw strings, IPs, model
@@ -153,6 +181,10 @@ to deploy onto or operate a frame.
 
 - The local D1 schema implements display registrations, bounded pairing state,
   hashed high-entropy session credentials, revocation and non-secret configuration.
+- Additive migrations `0005_private_photos.sql` and `0006_google_photo_connection.sql`
+  define one-use OAuth state, a single transient Picker job, the encrypted owner Google
+  refresh-token record and private-photo metadata. Only the Worker receives the R2
+  binding. Production setup is deployed; tests use synthetic photos and mocked APIs.
 - The tested schema uses atomic batches for one-time claim consumption,
   and bounded expiry cleanup that is admitted-only plus a scheduled 15-minute trigger.
   Validate production consistency, cron deployment and retention before
@@ -195,9 +227,14 @@ Android 4.4/Firefox 68.
 
 1. **Implemented locally:** public weather through the Worker, with bounded caching,
    provider-response validation, and visible error/stale states as described above.
-2. **Future:** optional selected calendar with minimum read-only scope, authorized on the trusted
+2. **Deployed, owner end-to-end validation pending:** owner-selected Google Photos Picker
+   snapshots into private R2 and authenticated display delivery. This is not whole-album
+   mirroring, live sync, public bucket delivery, or end-to-end encryption. The refresh
+   token is encrypted until owner disconnect; imported R2 objects remain after disconnect.
+   See the release runbook for verification gaps and route-config drift.
+3. **Future:** optional selected calendar with minimum read-only scope, authorized on the trusted
    admin device. Private ICS links are secrets, not public frontend configuration.
-3. **Future:** optional tasks/other integrations after agreeing display data scope and any writes.
+4. **Future:** optional tasks/other integrations after agreeing display data scope and any writes.
 
 Cloudflare and the upstream providers process the chosen data. The frame can read
 anything displayed to it even if master credentials are kept off the device.
