@@ -44,6 +44,18 @@ bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowli
 (the custom hostname and the `workers.dev` address); both serve the security headers
 and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
 
+The managed admission bindings are `PUBLIC_ADMISSION_CLIENT`,
+`PUBLIC_ADMISSION_GLOBAL` and `OWNER_ADMISSION_CLIENT`. The next managed deployment
+must carry all three in its production config, using account-unique namespace IDs,
+and reconcile the production cron with the checked-in five-minute cadence. The public client check
+must run before the public aggregate check; owner preverification has no shared
+aggregate namespace, and verified owner D1 accounting keeps a separate reserved
+revocation budget. Workers native rate limits are approximate per Cloudflare
+location/POP rather than account-global, so release review must measure expected
+distributed traffic and confirm no alternate origin bypasses Cloudflare or the
+Access policy. `CF-Connecting-IP` and the Access assertion are trusted only on
+requests that traverse the intended Cloudflare path.
+
 Owner-initiated pairing reuses the existing enrollment table and requires no new
 migration. Existing display sessions remain valid. Legacy display-initiated pending
 rows are deliberately not claimable by the new route and expire through normal cleanup;
@@ -70,6 +82,11 @@ When the repository is checked out alone, use the equivalent package commands at
 its root. `build:worker` is a packaging dry run, not an upload. Keep preview servers
 on loopback. Inspect the output allowlist: display/admin HTML, CSS, app/admin JS and favicon;
 no mockups, private settings, captures, secrets, state databases or source maps.
+
+The package manifest scopes an Undici override to the version of Miniflare pinned
+by Wrangler. Remove the override once the chosen upstream release resolves an
+Undici version that clears the advisory check. Keep the D1 fixture's separate
+metadata-fetch flag disabled for repeatable offline checks.
 
 Use synthetic data in browser tests. Verify both themes at 1280×800 and a small
 viewport; ZIP Save/Cancel/Reset; keyboard focus trapping/restoration in both dialogs;
@@ -193,8 +210,25 @@ private account data; this backlog entry authorizes none of those operations.
 
 Record the previous good Worker version and schema compatibility before release.
 A Worker code rollback does **not** restore database contents or undo migrations.
-Prefer backward-compatible schema changes; test data recovery separately. Never
-restore an old database in a way that silently resurrects revoked credentials.
+Prefer backward-compatible schema changes and rehearse data recovery separately.
+
+For a separately approved restore, gate managed traffic on every origin and allow
+in-flight requests to finish before restoring or changing the database binding.
+Keep the gate in place while validating the target database and schema, including
+any additive migrations required by the version that will serve traffic. With
+the gate still closed, apply
+[`invalidate-restored-display-credentials.sql`](../scripts/invalidate-restored-display-credentials.sql)
+to that restored database. It expires outstanding codes, preserves existing
+revocation timestamps, revokes the remaining displays, and deletes session
+credential hashes. Displays must pair again after recovery.
+
+Verify that there are zero display session rows, zero display rows with a
+`NULL` `revoked_at`, and zero pending or approved enrollment rows with a
+nonzero expiry or a populated code or pending hash. The script is safe to retry
+while all managed traffic is gated. After an interruption, repeat the script and
+all three checks before reopening. Rehearse the procedure using synthetic data
+and confirm previously issued credentials remain denied and new enrollment works.
+Keep the verified version, database identity, and result in private release records.
 
 If authorization fails or sensitive data is exposed, disable affected routes/access,
 revoke compromised sessions or credentials, and inspect sanitized diagnostics. Do

@@ -27,17 +27,21 @@ class Element {
   async fire(type, event = { preventDefault() {} }) { return this.listeners.get(type)?.(event); }
 }
 
-function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, status: 201 }) {
+function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, status: 201 }, handler) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
     return elements.get(id);
   };
   const document = { getElementById: element, createElement: (tag) => new Element(tag) };
-  const window = { setTimeout: () => 1, clearTimeout() {} };
+  const timers = new Map();
+  let nextTimer = 1;
+  const window = { setTimeout(callback, delay) { const id = nextTimer++; timers.set(id, { callback, delay }); return id; }, clearTimeout(id) { timers.delete(id); } };
   const calls = [];
   const fetch = async (path, options = {}) => {
     calls.push({ path, options });
+    const custom = handler?.(path, options);
+    if (custom) return custom;
     if (path === '/api/admin/displays') return { ok: true, status: 200, json: async () => ({ displays }) };
     if (path === '/api/admin/label') return { ok: true, status: 200, json: async () => ({ status: 'updated' }) };
     if (path === '/api/admin/revoke') return { ok: true, status: 204, json: async () => null };
@@ -51,7 +55,7 @@ function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, 
     throw new Error('unexpected_route');
   };
   vm.runInNewContext(source, { document, window, fetch, AbortController, Date, JSON, Number, String, Boolean, Array, Error });
-  return { element, calls };
+  return { element, calls, timers };
 }
 
 test('revoked browser entries are grouped in a closed history disclosure without active controls', async () => {
@@ -125,4 +129,81 @@ test('a failed pairing-code request clears the code and keeps the form usable', 
   assert.equal(code.textContent, '');
   assert.match(app.element('admin-status').textContent, /Could not generate a pairing code/);
   assert.equal(app.element('pairing-generate').disabled, false);
+});
+
+const display = (id, extra = {}) => ({ id, name: null, createdAt: 1792670000, expiresAt: 1795262000, revoked: false, revokedAt: null, ...extra });
+const okPage = (displays, scope, nextCursor = null) => ({ ok: true, status: 200, json: async () => ({ displays, scope, nextCursor }) });
+
+test('admin pages active and expired history independently without accumulating DOM rows', async () => {
+  const app = start([], undefined, (path) => {
+    if (path === '/api/admin/displays') return okPage([display('first')], 'active', 'active-next');
+    if (path === '/api/admin/displays?scope=history') return okPage([display('expired', { expired: true })], 'history', 'history-next');
+    if (path === '/api/admin/displays?scope=active&cursor=active-next') return okPage([display('oldest')], 'active');
+    if (path === '/api/admin/displays?scope=history&cursor=history-next') return okPage([display('revoked', { revoked: true })], 'history');
+  });
+  await new Promise(setImmediate);
+  assert.equal(app.element('active-next').hidden, false);
+  assert.equal(app.element('history-next').hidden, false);
+  const expired = app.element('revoked-displays').children[0];
+  assert.match(expired.children.at(-1).textContent, /Expired/);
+  assert.equal(expired.children.some((child) => child.tagName === 'form' || child.tagName === 'button'), false);
+  await app.element('active-next').fire('click');
+  await new Promise(setImmediate);
+  assert.equal(app.element('admin-displays').children.length, 1);
+  assert.match(app.element('admin-displays').children[0].children[4].textContent, /oldest/);
+  assert.equal(app.element('active-next').hidden, true);
+  assert.deepEqual(app.element('revoked-displays').children[0], expired);
+  await app.element('history-next').fire('click');
+  await new Promise(setImmediate);
+  assert.equal(app.element('history-next').hidden, true);
+  assert.equal(app.element('revoked-displays').children.length, 1);
+});
+
+test('pairing code disappears on expiry and explicit owner denial clears and locks metadata', async () => {
+  let denied = false;
+  const app = start([display('owner-only')], { code: 'ABCDEFGHJK', expiresAt: Date.now() / 1000 + 600, status: 201 }, (path) => {
+    if (denied) return { ok: false, status: 401 };
+  });
+  await new Promise(setImmediate);
+  await app.element('pairing-form').fire('submit');
+  await new Promise(setImmediate);
+  assert.equal(app.element('pairing-code').textContent, 'ABCDEFGHJK');
+  const expiry = [...app.timers.values()].find((timer) => timer.delay > 12000);
+  assert.ok(expiry);
+  expiry.callback();
+  assert.equal(app.element('pairing-code').textContent, '');
+  assert.match(app.element('admin-status').textContent, /expired/);
+  await app.element('pairing-form').fire('submit');
+  await new Promise(setImmediate);
+  denied = true;
+  await app.element('admin-refresh').fire('click');
+  await new Promise(setImmediate);
+  assert.equal(app.element('pairing-code').textContent, '');
+  assert.equal(app.element('admin-displays').children.length, 0);
+  assert.equal(app.element('revoked-displays').children.length, 0);
+  assert.equal(app.element('pairing-generate').disabled, true);
+  const before = app.calls.length;
+  await app.element('pairing-form').fire('submit');
+  assert.equal(app.calls.length, before);
+});
+
+test('an in-flight successful list response cannot restore metadata after owner denial', async () => {
+  let holdRead = false;
+  let resolveRead;
+  const pending = new Promise((resolve) => { resolveRead = resolve; });
+  const app = start([display('private-owner-label')], undefined, (path) => {
+    if (holdRead && path === '/api/admin/displays') return { ok: true, status: 200, json: () => pending };
+    if (path === '/api/admin/pairing') return { ok: false, status: 403 };
+  });
+  await new Promise(setImmediate);
+  holdRead = true;
+  await app.element('admin-refresh').fire('click');
+  await new Promise(setImmediate);
+  await app.element('pairing-form').fire('submit');
+  await new Promise(setImmediate);
+  resolveRead({ displays: [display('stale-owner-label')] });
+  await new Promise(setImmediate);
+  assert.equal(app.element('admin-displays').children.length, 0);
+  assert.equal(app.element('pairing-generate').disabled, true);
+  assert.match(app.element('admin-status').textContent, /Owner access denied/);
 });

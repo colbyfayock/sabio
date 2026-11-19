@@ -8,10 +8,38 @@ const revokedSummary = document.getElementById('revoked-summary');
 const pairingForm = document.getElementById('pairing-form');
 const pairingCode = document.getElementById('pairing-code');
 const pairingButton = document.getElementById('pairing-generate') as HTMLButtonElement | null;
-const say = (message: string): void => { if (status) status.textContent = message; };
+const say = (message: string): void => { if (status) status.textContent = denied ? 'Owner access denied. Sign in again and reload this page.' : message; };
 let busy = false;
+let denied = false;
+let authGeneration = 0;
+let pairingTimer = 0;
+let activePage: unknown[] = [];
+let historyPage: unknown[] = [];
+let activeCursor: string | null = null;
+let historyCursor: string | null = null;
+const activeNext = document.getElementById('active-next') as HTMLButtonElement | null;
+const historyNext = document.getElementById('history-next') as HTMLButtonElement | null;
+function clearPairing(): void {
+  window.clearTimeout(pairingTimer);
+  if (pairingCode) pairingCode.textContent = '';
+}
+function denyOwner(): void {
+  denied = true;
+  authGeneration += 1;
+  clearPairing();
+  activePage = [];
+  historyPage = [];
+  if (list) list.textContent = '';
+  if (revokedList) revokedList.textContent = '';
+  if (revokedHistory) revokedHistory.hidden = true;
+  if (activeNext) activeNext.hidden = true;
+  if (historyNext) historyNext.hidden = true;
+  if (pairingButton) pairingButton.disabled = true;
+}
 
 async function api(path: string, body?: object): Promise<unknown> {
+  if (denied) throw new Error('owner_denied');
+  const generation = authGeneration;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 12000);
   try {
@@ -20,31 +48,61 @@ async function api(path: string, body?: object): Promise<unknown> {
       headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined, signal: controller.signal,
     });
+    if (response.status === 401 || response.status === 403) denyOwner();
+    if (generation !== authGeneration) throw new Error('owner_denied');
     if (!response.ok) throw new Error('admin_request_failed');
-    return response.status === 204 ? null : await response.json();
+    const value: unknown = response.status === 204 ? null : await response.json();
+    if (generation !== authGeneration) throw new Error('owner_denied');
+    return value;
   } finally { window.clearTimeout(timeout); }
 }
 
-async function refresh(): Promise<void> {
+async function refresh(scope?: 'active' | 'history', cursor?: string | null): Promise<void> {
   try {
-    const value = await api('/api/admin/displays');
-    if (!value || typeof value !== 'object' || !('displays' in value) || !Array.isArray(value.displays) || value.displays.length > 100) throw new Error('invalid_response');
+    const readPage = async (path: string): Promise<{ displays: unknown[]; nextCursor: string | null; modern: boolean }> => {
+      const value = await api(path);
+      if (!value || typeof value !== 'object' || !('displays' in value) || !Array.isArray(value.displays) || value.displays.length > 100) throw new Error('invalid_response');
+      const next = 'nextCursor' in value ? value.nextCursor : null;
+      if (next !== null && (typeof next !== 'string' || next.length > 100)) throw new Error('invalid_response');
+      return { displays: value.displays, nextCursor: next, modern: 'scope' in value };
+    };
+    if (scope) {
+      const page = await readPage(`/api/admin/displays?scope=${scope}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+      if (scope === 'active') { activePage = page.displays; activeCursor = page.nextCursor; }
+      else { historyPage = page.displays; historyCursor = page.nextCursor; }
+    } else {
+      // No-query first request also works with the previous Worker version.
+      const page = await readPage('/api/admin/displays');
+      activePage = page.displays.filter((raw) => Boolean(raw && typeof raw === 'object' && (raw as Record<string, unknown>).revoked !== true));
+      activeCursor = page.nextCursor;
+      if (page.modern) {
+        const history = await readPage('/api/admin/displays?scope=history');
+        historyPage = history.displays;
+        historyCursor = history.nextCursor;
+      } else {
+        historyPage = page.displays.filter((raw) => Boolean(raw && typeof raw === 'object' && (raw as Record<string, unknown>).revoked === true));
+        historyCursor = null;
+      }
+    }
+    if (denied) return;
+    if (activeNext) { activeNext.hidden = !activeCursor; activeNext.disabled = false; }
+    if (historyNext) { historyNext.hidden = !historyCursor; historyNext.disabled = false; }
     if (!list || !revokedList || !revokedHistory) return;
     const revokedOpen = revokedHistory.open;
     list.textContent = '';
     revokedList.textContent = '';
-    const displays = value.displays as unknown[];
-    const active = displays.filter((display) => Boolean(display && typeof display === 'object' && !Array.isArray(display) && (display as Record<string, unknown>).revoked !== true));
-    const revoked = displays.filter((display) => Boolean(display && typeof display === 'object' && !Array.isArray(display) && (display as Record<string, unknown>).revoked === true));
+    const active = activePage;
+    const revoked = historyPage;
     revokedHistory.hidden = revoked.length === 0;
     revokedHistory.open = revokedOpen;
-    if (revokedSummary) revokedSummary.textContent = `${revokedOpen ? 'Hide' : 'Show'} revoked sessions (${revoked.length})`;
-    if (active.length === 0) list.textContent = 'No active browser sessions.';
+    if (revokedSummary) revokedSummary.textContent = `${revokedOpen ? 'Hide' : 'Show'} expired or revoked sessions (${revoked.length})`;
+    if (active.length === 0) list.textContent = 'No active browser sessions on this page. Refresh sessions to start again.';
 
-    const render = (rawDisplay: unknown, isRevoked: boolean, target: HTMLElement): void => {
+    const render = (rawDisplay: unknown, isHistory: boolean, target: HTMLElement): void => {
       if (!rawDisplay || typeof rawDisplay !== 'object' || Array.isArray(rawDisplay)) throw new Error('invalid_response');
       const display = rawDisplay as Record<string, unknown>;
-      if (typeof display.id !== 'string' || display.id.length > 128 || typeof display.expiresAt !== 'number' || !Number.isFinite(display.expiresAt) || typeof display.createdAt !== 'number' || !Number.isFinite(display.createdAt) || display.revoked !== isRevoked) throw new Error('invalid_response');
+      if (typeof display.id !== 'string' || display.id.length > 128 || typeof display.expiresAt !== 'number' || !Number.isFinite(display.expiresAt) || typeof display.createdAt !== 'number' || !Number.isFinite(display.createdAt) || typeof display.revoked !== 'boolean') throw new Error('invalid_response');
+      const isRevoked = isHistory;
       const displayId = display.id;
       const item = document.createElement('li');
       if (isRevoked) item.className = 'revoked-item';
@@ -83,7 +141,7 @@ async function refresh(): Promise<void> {
       nameForm.appendChild(nameSave);
       nameForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        if (busy) return;
+        if (busy || denied) return;
         busy = true;
         nameSave.disabled = true;
         void api('/api/admin/label', { id: displayId, name: nameInput.value }).then(async () => {
@@ -96,7 +154,7 @@ async function refresh(): Promise<void> {
       button.textContent = 'Revoke browser';
       button.disabled = isRevoked;
       button.addEventListener('click', () => {
-        if (busy) return;
+        if (busy || denied) return;
         busy = true;
         button.disabled = true;
         void api('/api/admin/revoke', { id: displayId }).then(async () => {
@@ -108,7 +166,7 @@ async function refresh(): Promise<void> {
       if (isRevoked) {
         const revokedLabel = document.createElement('p');
         revokedLabel.className = 'revoked-status';
-        revokedLabel.textContent = `Revoked ${typeof display.revokedAt === 'number' && Number.isFinite(display.revokedAt) ? new Date(display.revokedAt * 1000).toLocaleString() : 'at an unknown time'}`;
+        revokedLabel.textContent = display.revoked !== true ? (display.inactive === true ? 'Session unavailable; pairing is required again.' : 'Expired; pairing is required again.') : `Revoked ${typeof display.revokedAt === 'number' && Number.isFinite(display.revokedAt) ? new Date(display.revokedAt * 1000).toLocaleString() : 'at an unknown time'}`;
         item.appendChild(revokedLabel);
         target.appendChild(item);
         return;
@@ -126,14 +184,18 @@ async function refresh(): Promise<void> {
 
 pairingForm?.addEventListener('submit', (event) => {
   event.preventDefault();
-  if (busy) return;
+  if (busy || denied) return;
   busy = true;
   if (pairingButton) pairingButton.disabled = true;
-  if (pairingCode) pairingCode.textContent = '';
+  clearPairing();
   void api('/api/admin/pairing', {}).then((value) => {
     if (!value || typeof value !== 'object' || !('code' in value) || typeof value.code !== 'string' ||
         !/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/.test(value.code)) throw new Error('invalid_response');
+    if (denied) return;
     if (pairingCode) pairingCode.textContent = value.code;
+    const lifetime = 'expiresAt' in value && typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt)
+      ? Math.max(0, Math.min(600000, value.expiresAt * 1000 - Date.now())) : 600000;
+    pairingTimer = window.setTimeout(() => { clearPairing(); say('Pairing code expired. Generate a new code to pair a display.'); }, lifetime);
     const expiresAt = 'expiresAt' in value && typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt)
       ? new Date(value.expiresAt * 1000).toLocaleTimeString()
       : 'ten minutes from now';
@@ -143,12 +205,21 @@ pairingForm?.addEventListener('submit', (event) => {
     say('Could not generate a pairing code. Check owner authentication and service configuration, then retry.');
   }).finally(() => {
     busy = false;
-    if (pairingButton) pairingButton.disabled = false;
+    if (pairingButton) pairingButton.disabled = denied;
   });
 });
+for (const scope of ['active', 'history'] as const) {
+  const button = scope === 'active' ? activeNext : historyNext;
+  button?.addEventListener('click', () => {
+    if (busy || denied) return;
+    busy = true;
+    button.disabled = true;
+    void refresh(scope, scope === 'active' ? activeCursor : historyCursor).finally(() => { busy = false; button.disabled = false; });
+  });
+}
 document.getElementById('admin-refresh')?.addEventListener('click', () => { void refresh(); });
 revokedHistory?.addEventListener('toggle', () => {
-  if (revokedSummary && revokedHistory) revokedSummary.textContent = `${revokedHistory.open ? 'Hide' : 'Show'} revoked sessions (${revokedList?.children.length || 0})`;
+  if (revokedSummary && revokedHistory) revokedSummary.textContent = `${revokedHistory.open ? 'Hide' : 'Show'} expired or revoked sessions (${revokedList?.children.length || 0})`;
 });
 void refresh();
 

@@ -154,7 +154,7 @@ to deploy onto or operate a frame.
 - The local D1 schema implements display registrations, bounded pairing state,
   hashed high-entropy session credentials, revocation and non-secret configuration.
 - The tested schema uses atomic batches for one-time claim consumption,
-  and bounded expiry cleanup that is admitted-only plus a scheduled 15-minute trigger.
+  and bounded expiry cleanup after admission plus an independent scheduled trigger.
   Validate production consistency, cron deployment and retention before
   enabling it. Browser-local photo/location/appearance settings do not yet sync to D1.
 - Avoid Workers KV as the sole authority for immediate revocation/one-time pairing:

@@ -176,8 +176,8 @@ test('admin can list, and revoke a display session', async (t) => {
   assert.equal(revoked.status, 204);
   assert.equal((await call(db, displayRequest)).status, 401);
   assert.equal((await call(db, makeRequest('/api/admin/displays'))).status, 200);
-  assert.equal((await (await call(db, makeRequest('/api/admin/displays'))).json()).displays[0].revoked, true);
-  assert.equal(typeof (await (await call(db, makeRequest('/api/admin/displays'))).json()).displays[0].revokedAt, 'number');
+  assert.equal((await (await call(db, makeRequest('/api/admin/displays?scope=history'))).json()).displays[0].revoked, true);
+  assert.equal(typeof (await (await call(db, makeRequest('/api/admin/displays?scope=history'))).json()).displays[0].revokedAt, 'number');
 });
 
 test('owner may set and clear an optional display nickname without admitting markup or another display', async (t) => {
@@ -313,15 +313,21 @@ test('active display sessions renew daily, reissue the cookie, and never revive 
 
   const fresh = await access.getDisplaySession(request, db);
   assert.equal(await access.refreshDisplaySession(request, db, fresh), null);
-  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, now + idle);
+  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, fresh.expiresAt);
 
   db.sqlite.prepare('UPDATE access_displays SET expires_at = ?').run(now + idle - 24 * 60 * 60);
   db.sqlite.prepare('UPDATE access_display_sessions SET expires_at = ?').run(now + idle - 24 * 60 * 60);
   const due = await access.getDisplaySession(request, db);
-  const refreshed = await access.refreshDisplaySession(request, db, due);
-  assert.equal(refreshed, `__Host-sabio_display=${token}; Max-Age=${idle}; Path=/; Secure; HttpOnly; SameSite=Strict`);
-  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, now + idle);
-  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_display_sessions').get().expires_at, now + idle);
+  const refreshed = await Promise.all([
+    access.refreshDisplaySession(request, db, due),
+    access.refreshDisplaySession(request, db, due),
+  ]);
+  assert.deepEqual(refreshed.filter(Boolean), [
+    `__Host-sabio_display=${token}; Max-Age=${idle}; Path=/; Secure; HttpOnly; SameSite=Strict`,
+  ]);
+  const renewedUntil = db.sqlite.prepare('SELECT expires_at FROM access_display_sessions').get().expires_at;
+  assert.ok(renewedUntil >= now + idle && renewedUntil <= Math.floor(Date.now() / 1000) + idle);
+  assert.equal(db.sqlite.prepare('SELECT expires_at FROM access_displays').get().expires_at, renewedUntil);
 
   const current = await access.getDisplaySession(request, db);
   assert.equal(await access.refreshDisplaySession(request, db, { ...current, expiresAt: current.expiresAt }), null);
@@ -362,4 +368,97 @@ test('the owner is notified exactly once after a session is actually issued', as
   const failing = await claim(db, second.code, {}, async () => { throw new Error('synthetic mail failure'); });
   assert.equal(failing.status, 200, 'notification failure must not block session issuance');
   assert.equal(failing.headers.getSetCookie().filter((value) => value.startsWith('__Host-sabio_display=')).length, 1);
+});
+
+test('bounded keyset pages discover all active and mixed history rows with tied timestamps', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const now = Math.floor(Date.now() / 1000);
+  const ids = { active: [], history: [] };
+  for (let i = 1; i <= 285; i += 1) {
+    const id = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    const scope = i <= 135 ? 'active' : 'history';
+    ids[scope].push(id);
+    const expired = i > 210;
+    db.sqlite.prepare("INSERT INTO access_enrollments (id, display_id, created_at, expires_at, status) VALUES (?, ?, ?, ?, 'consumed')").run(id, id, now - i, now + 600);
+    db.sqlite.prepare('INSERT INTO access_displays (id, enrollment_id, created_at, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?)').run(id, id, now - Math.floor(i / 17), expired ? now - 1 : now + 600, scope === 'history' && !expired ? now : null);
+    db.sqlite.prepare('INSERT INTO access_display_sessions (token_hash, display_id, issued_at, expires_at) VALUES (?, ?, ?, ?)').run(createHash('sha256').update(`session:${String(i).padStart(64, '0')}`).digest('hex'), id, now - i, expired ? now - 1 : now + 600);
+  }
+  for (const scope of ['active', 'history']) {
+    const found = [];
+    let cursor = null;
+    do {
+      const response = await call(db, makeRequest(`/api/admin/displays?scope=${scope}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('Cache-Control'), 'no-store');
+      const page = await response.json();
+      assert.ok(page.displays.length <= 100);
+      found.push(...page.displays.map((row) => row.id));
+      if (scope === 'history') assert.ok(page.displays.every((row) => row.expired || row.revoked));
+      cursor = page.nextCursor;
+    } while (cursor);
+    assert.deepEqual(new Set(found), new Set(ids[scope]));
+    assert.equal(found.length, ids[scope].length, 'ties never duplicate rows');
+  }
+  const oldest = ids.active.at(-1);
+  assert.equal((await call(db, post('/api/admin/revoke', JSON.stringify({ id: oldest })))).status, 204);
+  const credential = (i) => makeRequest('/api/display', { headers: { Cookie: `__Host-sabio_display=${String(i).padStart(64, '0')}` } });
+  assert.equal((await call(db, credential(135))).status, 401);
+  assert.equal((await call(db, credential(1))).status, 200);
+});
+
+test('list cursors reject malformed, duplicate and cross-scope parameters before storage', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const valid = 'v1:active:1792670400:00000000-0000-4000-8000-000000000001';
+  const invalid = ['?', '?scope=', '?scope=all', '?scope=active&scope=history', '?limit=100', '?&&', '?scope=active&', '?cursor=', '?cursor=x',
+    `?scope=history&cursor=${valid}`, `?cursor=${valid}&cursor=${valid}`, `?cursor=${valid.replace('1792670400', '01')}`,
+    `?cursor=${valid.replace('1792670400', '9007199254740992')}`, `?cursor=${valid}x`, '?cursor=' + 'a'.repeat(201)];
+  const before = db.stats();
+  for (const query of invalid) assert.equal((await call(db, makeRequest('/api/admin/displays' + query))).status, 400, query);
+  assert.deepEqual(db.stats(), before);
+  for (const route of ['/api/display', '/api/admin/revoke', '/api/enrollment/claim', '/api/admin/pairing', '/api/admin/label']) {
+    assert.equal((await call(db, makeRequest(route + '?scope=active'))).status, 400);
+  }
+  assert.equal((await call(db, makeRequest('/api/admin/displays?scope=active'), async () => false)).status, 401);
+  assert.equal((await call(db, makeRequest('/api/admin/displays?scope=history', { headers: { Origin: 'https://other.example' } }))).status, 403);
+  assert.equal((await call(db, post('/api/admin/displays?scope=active'))).status, 405);
+  const stale = await (await call(db, makeRequest('/api/admin/displays?cursor=' + valid))).json();
+  assert.deepEqual(stale.displays, []);
+  assert.equal(stale.nextCursor, null);
+});
+
+test('renewal only updates the presented credential and its own active display', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const a = displayCookie(await claim(db, (await pair(db)).code)).split(';')[0];
+  const b = displayCookie(await claim(db, (await pair(db)).code)).split(';')[0];
+  const now = Math.floor(Date.now() / 1000);
+  const due = now + 6 * 86400;
+  db.sqlite.prepare('UPDATE access_displays SET expires_at = ?').run(due);
+  db.sqlite.prepare('UPDATE access_display_sessions SET expires_at = ?').run(due);
+  const requestA = makeRequest('/api/bootstrap', { headers: { Cookie: a } });
+  const requestB = makeRequest('/api/bootstrap', { headers: { Cookie: b } });
+  const sessionA = await access.getDisplaySession(requestA, db);
+  assert.equal(await access.refreshDisplaySession(requestB, db, sessionA), null);
+  assert.ok(db.sqlite.prepare('SELECT expires_at FROM access_displays').all().every((r) => r.expires_at === due));
+  assert.ok(db.sqlite.prepare('SELECT expires_at FROM access_display_sessions').all().every((r) => r.expires_at === due));
+  assert.ok(await access.refreshDisplaySession(requestA, db, sessionA));
+});
+
+test('active listing requires a usable session, and history reports missing or expired credentials', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  await claim(db, (await pair(db)).code);
+  await claim(db, (await pair(db)).code);
+  const rows = db.sqlite.prepare('SELECT display_id FROM access_display_sessions ORDER BY display_id').all();
+  db.sqlite.prepare('DELETE FROM access_display_sessions WHERE display_id = ?').run(rows[0].display_id);
+  db.sqlite.prepare('UPDATE access_display_sessions SET expires_at = ? WHERE display_id = ?').run(Math.floor(Date.now() / 1000) - 1, rows[1].display_id);
+  const active = await (await call(db, makeRequest('/api/admin/displays'))).json();
+  assert.deepEqual(active.displays, []);
+  const history = await (await call(db, makeRequest('/api/admin/displays?scope=history'))).json();
+  assert.equal(history.displays.length, 2);
+  assert.equal(history.displays.find((r) => r.id === rows[0].display_id).inactive, true);
+  assert.equal(history.displays.find((r) => r.id === rows[1].display_id).expired, true);
+  assert.equal(JSON.stringify(history).includes('token'), false);
 });

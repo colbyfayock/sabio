@@ -8,7 +8,8 @@ const result = await build({ entryPoints: ['src/index.ts'], bundle: true, format
 const { default: worker } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 const origin = 'https://example.com';
 const secondaryOrigin = 'https://alternate.example.com';
-const vars = { APP_MODE: 'managed', APP_ORIGIN: origin, APP_ALLOWED_ORIGINS: `${origin},${secondaryOrigin}`, ACCESS_TEAM_DOMAIN: 'https://sample-team.cloudflareaccess.com', ACCESS_AUDIENCE: 'a'.repeat(64), OWNER_EMAIL: 'owner@example.com', NOTIFY_FROM_EMAIL: 'notify@example.com' };
+const allowAdmission = { async limit() { return { success: true }; } };
+const vars = { PUBLIC_ADMISSION_GLOBAL: allowAdmission, PUBLIC_ADMISSION_CLIENT: allowAdmission, OWNER_ADMISSION_CLIENT: allowAdmission, APP_MODE: 'managed', APP_ORIGIN: origin, APP_ALLOWED_ORIGINS: `${origin},${secondaryOrigin}`, ACCESS_TEAM_DOMAIN: 'https://sample-team.cloudflareaccess.com', ACCESS_AUDIENCE: 'a'.repeat(64), OWNER_EMAIL: 'owner@example.com', NOTIFY_FROM_EMAIL: 'notify@example.com' };
 const request = (path, body, headers = {}, base = origin, cf) => {
   const req = new Request(base + path, {
     method: body === undefined ? 'GET' : 'POST',
@@ -145,9 +146,16 @@ test('managed routing integrates real signed owner verification, owner-issued pa
   assert.equal(Object.hasOwn(displays[0], 'zipCode'), false);
   assert.equal(Object.hasOwn(displays[0].weatherArea, 'latitude'), false);
   assert.equal(Object.hasOwn(displays[0].weatherArea, 'longitude'), false);
+  // Public intake and ordinary owner actions can be closed independently while
+  // the verified owner retains the dedicated revocation allowance.
+  env.PUBLIC_ADMISSION_GLOBAL = { async limit() { return { success: false }; } };
+  assert.equal((await worker.fetch(request('/api/bootstrap', undefined, displayHeaders), env)).status, 429);
+  db.sqlite.prepare("UPDATE access_rate_limits SET count = 30 WHERE bucket_key = 'admin-owner'").run();
   const revoked = await worker.fetch(request('/api/admin/revoke', { id: displays[0].id }, ownerHeaders), env);
   assert.equal(revoked.status, 204);
-  const revokedList = await (await worker.fetch(request('/api/admin/displays', undefined, ownerHeaders), env)).json();
+  env.PUBLIC_ADMISSION_GLOBAL = allowAdmission;
+  db.sqlite.prepare("DELETE FROM access_rate_limits WHERE bucket_key = 'admin-owner'").run();
+  const revokedList = await (await worker.fetch(request('/api/admin/displays?scope=history', undefined, ownerHeaders), env)).json();
   assert.equal(revokedList.displays[0].revoked, true);
   assert.equal(typeof revokedList.displays[0].revokedAt, 'number');
   assert.equal((await worker.fetch(request('/api/weather', { zipCode: '00000' }, displayHeaders), env)).status, 401);

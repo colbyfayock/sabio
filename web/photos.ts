@@ -49,6 +49,7 @@ export function initializePhotos(): void {
     const failed = (): void => {
       if (generation !== token) return;
       cleanupLoad();
+      image.removeAttribute('src');
       if (attempts + 1 < preferences.urls.length) {
         show((target + 1) % preferences.urls.length, attempts + 1);
         return;

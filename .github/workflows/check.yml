@@ -3,6 +3,9 @@ name: checks
 on:
   push:
   pull_request:
+  schedule:
+    # Repository maintainers triage newly published advisories on existing pins.
+    - cron: '23 14 * * 1'
 
 permissions:
   contents: read
@@ -13,6 +16,7 @@ jobs:
     timeout-minutes: 10
     env:
       WRANGLER_SEND_METRICS: 'false'
+      CLOUDFLARE_CF_FETCH_ENABLED: 'false'
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -25,5 +29,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level=low
       - run: pnpm check
       - run: pnpm build:worker
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
+        with:
+          fail-on-severity: low
+          comment-summary-in-pr: never
