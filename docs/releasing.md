@@ -88,6 +88,10 @@ by Wrangler. Remove the override once the chosen upstream release resolves an
 Undici version that clears the advisory check. Keep the D1 fixture's separate
 metadata-fetch flag disabled for repeatable offline checks.
 
+CI runs `pnpm audit --audit-level=low` on pull requests, pushes, and a weekly
+schedule. This scans the full dependency tree without requiring GitHub's
+Dependency Graph.
+
 Use synthetic data in browser tests. Verify both themes at 1280×800 and a small
 viewport; ZIP Save/Cancel/Reset; keyboard focus trapping/restoration in both dialogs;
 fullscreen entry/exit; photo Pause/Next, reload persistence, broken source recovery;
