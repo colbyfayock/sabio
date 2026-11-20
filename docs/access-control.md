@@ -105,42 +105,62 @@ only, never identity proof. Revoked sessions remain in a collapsed admin history
 expiry, with their revocation timestamp and no active controls, as a minimal audit trail.
 Treat the area as location-related owner data.
 
+The owner list defaults to active displays with a live session and consumed enrollment.
+`GET /api/admin/displays?scope=history` lists retained inactive records separately.
+Each page contains up to 100 records; pass the returned `nextCursor` as `cursor`
+with the same scope to continue. The cursor orders records by creation time and ID;
+it is not a snapshot, so refresh to see changes made while paging.
+
 Revocation prevents future protected API access; it cannot erase content already
 seen, invalidate a public photo URL, or control an offline/root-accessible endpoint.
+An already-authorized request may finish; do not extend this contract to private
+payloads without revisiting when authorization is checked.
 The current photo/location/appearance settings are still browser-local, not remotely
 managed D1 records. No private display content is implemented.
 
 ## CSRF, abuse and retention
 
-Access routes require an exact configured request origin/host and reject query or
-encoded-path alternatives. State changes require JSON, an exact Origin header and
+Access routes require an exact configured request origin/host and reject encoded
+paths and unexpected query parameters. State changes require JSON, an exact Origin header and
 bounded bodies. SameSite cookies complement these checks, not replace them. If multiple
 hostnames are configured, session cookies remain host-only: a paired display using
 one hostname does not transfer its cookie to another and must pair there separately.
 
-Rate budgets are atomic D1 counters with fixed windows:
+Managed routes use Cloudflare Workers native rate limit bindings before credential
+lookup, D1 access or provider requests. Public traffic gets 120 requests per minute
+per client and route group, checked before a shared 600-per-minute public budget.
+Owner preverification gets 30 requests per minute per client and group, with
+revocation separate and no shared owner preverification budget. These native
+limits are approximate and local to each Cloudflare location, not globally enforced.
+
+After admission, the application uses atomic D1 counters with fixed windows:
 
 | Operation | Budget |
 | --- | --- |
 | Create owner pairing code | 10/minute for the single owner |
 | Claim pairing code | 20/minute/client IP, 200/minute globally |
-| Verify owner token | 30/minute/client IP, 200/minute globally |
-| Owner mutations | 30/minute for the single owner |
+| Verified owner list, pairing and label | 30/minute for the single owner |
+| Verified owner revocation | Separate 30/minute for the single owner |
 | Poll bootstrap | 12/minute/paired display |
 | Fetch weather | 6/minute/paired display |
 
 Client IP comes from Cloudflare's `CF-Connecting-IP`, not arbitrary forwarded headers;
-missing/invalid values deny pairing claims and owner verification. Hashes are not
+missing/invalid values deny managed admission. Cloudflare Access must protect `/admin`
+and every `/api/admin/*` route on every configured hostname; the Worker also verifies
+the assertion before serving the admin shell or accessing owner data. Hashes are not
 anonymous: the rate keys hash IPs with fixed domain-separation strings, not a secret
 salt. Global limits bound work but can deliberately trade availability for cost
 protection under distributed abuse. These app limits do not substitute for a
 deployment-level traffic/quota review or guarantee that a Free-plan budget cannot be
 exhausted.
 
-Cleanup never runs for unauthenticated, invalid or rejected requests. A bounded
-six-statement batch (at most 25/50 rows per statement) runs only after a pairing claim
-succeeds or an owner is verified, and a scheduled trigger runs the same batch every
-15 minutes so retention does not depend on traffic. Expired rows are already denied by
+Cleanup does not run before admission or during owner list reads. A bounded
+six-statement batch runs after a successful claim or verified owner mutation admission and removes at
+most 50 expired rate windows per pass. The checked-in scheduled trigger runs every
+five minutes and can remove up to 500 oldest expired rate windows while leaving the
+other statement bounds unchanged. At rollout, verify the effective managed cadence
+and compare successful cleanup and backlog age with actual window creation.
+Expired rows are already denied by
 every authorization query, so cleanup only reclaims storage. Expired unclaimed pairing
 records, old rate windows and expired session/display records are removed in
 foreign-key-safe order. Revoked displays remain listed until expiry. Consumed pairing

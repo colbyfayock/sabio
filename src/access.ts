@@ -11,6 +11,8 @@ interface DisplayRow {
   createdAt: number;
   expiresAt: number;
   revokedAt: number | null;
+  sessionExpiresAt: number | null;
+  enrollmentStatus: string;
   deviceType: string;
   browserLabel: string | null;
   osLabel: string | null;
@@ -18,6 +20,24 @@ interface DisplayRow {
   weatherLocation: string | null;
   weatherTimeZone: string | null;
   weatherLocationAt: number | null;
+}
+
+// Fixed page size keeps both response size and query results bounded.
+const LIST_PAGE_SIZE = 100;
+type ListScope = 'active' | 'history';
+function listOptions(url: URL): { scope: ListScope; cursor: { at: number; id: string } | null } | null {
+  if (url.search.length > 200) return null;
+  const keys = Array.from(url.searchParams.keys());
+  if ((url.search && !/^\?(?:scope|cursor)=[^&]+(?:&(?:scope|cursor)=[^&]+)*$/.test(url.search)) ||
+      keys.some((key) => key !== 'scope' && key !== 'cursor') ||
+      new Set(keys).size !== keys.length || (url.href.includes('?') && !url.search)) return null;
+  const scope = url.searchParams.get('scope') ?? 'active';
+  if (scope !== 'active' && scope !== 'history') return null;
+  const raw = url.searchParams.get('cursor');
+  if (raw === null) return { scope, cursor: null };
+  const match = /^v1:(active|history):(0|[1-9][0-9]{0,15}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(raw);
+  if (!match || match[1] !== scope || !Number.isSafeInteger(Number(match[2]))) return null;
+  return { scope, cursor: { at: Number(match[2]), id: match[3] } };
 }
 
 const DISPLAY_COOKIE = '__Host-sabio_display';
@@ -127,33 +147,8 @@ async function readSingleStringBody(request: Request): Promise<Record<string, st
   const length = request.headers.get('Content-Length');
   if (length && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES)) return null;
   if (!request.body) return null;
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_BODY_BYTES) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    return null;
-  }
-
-  try {
-    const body = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      body.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(body));
+    const parsed = await boundedJson(request, MAX_BODY_BYTES);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const object = parsed as Record<string, unknown>;
     if (Object.keys(object).length !== 1) return null;
@@ -187,11 +182,14 @@ async function readDisplayNameBody(request: Request): Promise<{ id: string; name
 }
 
 /**
- * Bounded housekeeping batch. Every statement deletes at most 25/50 rows and every
- * caller must be an admitted request or the scheduled handler, never an
- * unauthenticated or rejected request.
+ * Admitted requests do a small housekeeping pass. The scheduled handler can
+ * drain more rate windows without adding work to incoming requests.
  */
-export async function cleanupExpired(db: D1Database, now: number = nowSeconds()): Promise<void> {
+export async function cleanupExpired(
+  db: D1Database,
+  now: number = nowSeconds(),
+  { scheduled = false }: { scheduled?: boolean } = {},
+): Promise<void> {
   await db.batch([
     db.prepare(`DELETE FROM access_enrollments
       WHERE id IN (SELECT id FROM access_enrollments
@@ -211,8 +209,9 @@ export async function cleanupExpired(db: D1Database, now: number = nowSeconds())
         AND NOT EXISTS (SELECT 1 FROM access_displays d WHERE d.enrollment_id = e.id) LIMIT 25)`).bind(now),
     db.prepare(`DELETE FROM access_rate_limits
       WHERE (bucket_key, window_start) IN (
-        SELECT bucket_key, window_start FROM access_rate_limits WHERE expires_at <= ? LIMIT 50
-      )`).bind(now),
+        SELECT bucket_key, window_start FROM access_rate_limits
+        WHERE expires_at <= ? ORDER BY expires_at LIMIT ?
+      )`).bind(now, scheduled ? 500 : 50),
   ]);
 }
 
@@ -251,20 +250,21 @@ async function hasRateBudget(db: D1Database, key: string, now: number, windowSec
   return row === null || row.count < limit;
 }
 
-function validIp(value: string): { value: string; loopback: boolean } | null {
+export function validIp(value: string): { value: string; loopback: boolean } | null {
   const ip = value.trim();
-  if (!ip || ip !== value || ip.includes(',') || /[^0-9a-fA-F:.]/.test(ip)) return null;
+  if (!ip || ip.length > 45 || ip !== value || ip.includes(',') || /[^0-9a-fA-F:.]/.test(ip)) return null;
   if (ip.includes(':')) {
     try {
       const parsed = new URL(`https://[${ip}]/`);
       if (!parsed.hostname.startsWith('[')) return null;
-      return { value: ip.toLowerCase(), loopback: ip.toLowerCase() === '::1' };
+      const normalized = parsed.hostname.slice(1, -1);
+      return { value: normalized, loopback: normalized === '::1' };
     } catch {
       return null;
     }
   }
   const parts = ip.split('.');
-  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return null;
+  if (parts.length !== 4 || parts.some((part) => !/^(0|[1-9]\d{0,2})$/.test(part) || Number(part) > 255)) return null;
   const normalized = parts.map(Number).join('.');
   return { value: normalized, loopback: Number(parts[0]) === 127 };
 }
@@ -321,7 +321,8 @@ export async function handleAccessRequest(
   if (!canonical || url.origin !== canonical.origin) return errorResponse(403, 'origin_not_allowed');
   const requestOrigin = request.headers.get('Origin');
   if (requestOrigin !== null && requestOrigin !== canonical.origin) return errorResponse(403, 'origin_not_allowed');
-  if (url.search || url.href.includes('?') || url.hash) return errorResponse(400, 'invalid_request');
+  const listing = decodedPath === '/api/admin/displays' ? listOptions(url) : null;
+  if (url.hash || (decodedPath === '/api/admin/displays' ? !listing : (url.search || url.href.includes('?')))) return errorResponse(400, 'invalid_request');
   if (decodedPath !== url.pathname) return errorResponse(400, 'invalid_request');
 
   const route = decodedPath;
@@ -418,16 +419,6 @@ export async function handleAccessRequest(
       ]);
     }
 
-    const adminIpHeader = request.headers.get('CF-Connecting-IP');
-    const adminIp = adminIpHeader === null ? null : validIp(adminIpHeader);
-    if (!adminIp) return errorResponse(403, 'origin_not_allowed');
-    const adminIpHash = await hash(`access-ip:${adminIp.value}`);
-    if (!await hasRateBudget(db, 'admin-verify-global', now, RATE_MINUTE_SECONDS, 200)
-      || !await takeRateLimit(db, `admin-verify-ip:${adminIpHash}`, now, RATE_MINUTE_SECONDS, 30)
-      || !await takeRateLimit(db, 'admin-verify-global', now, RATE_MINUTE_SECONDS, 200)) {
-      return errorResponse(429, 'rate_limited', { 'Retry-After': String(RATE_MINUTE_SECONDS) });
-    }
-
     let isAdmin = false;
     try {
       isAdmin = await verifyAdmin(request);
@@ -436,32 +427,47 @@ export async function handleAccessRequest(
     }
     if (!isAdmin) return errorResponse(401, 'admin_access_denied');
 
-    // Owner-authenticated traffic is bounded by the verification budget above.
-    await admittedCleanup(db, now);
+    // Only verified owners consume D1 budgets; revocation has its own counter.
+    const ownerKey = route === '/api/admin/revoke' ? 'admin-owner-revoke' : 'admin-owner';
+    if (!await takeRateLimit(db, ownerKey, now, RATE_MINUTE_SECONDS, 30)) {
+      return errorResponse(429, 'rate_limited', { 'Retry-After': String(RATE_MINUTE_SECONDS) });
+    }
+    if (route !== '/api/admin/displays') await admittedCleanup(db, now);
 
     if (route === '/api/admin/displays') {
+      if (!listing) return errorResponse(400, 'invalid_request');
+      const { scope, cursor } = listing;
       const result = await db.prepare(`SELECT d.id AS id, d.display_name AS name, d.created_at AS createdAt,
         d.expires_at AS expiresAt, d.revoked_at AS revokedAt,
+        s.expires_at AS sessionExpiresAt, e.status AS enrollmentStatus,
         d.device_type AS deviceType, d.browser_label AS browserLabel, d.os_label AS osLabel,
         d.last_seen_at AS lastSeenAt, d.weather_location AS weatherLocation,
         d.weather_time_zone AS weatherTimeZone, d.weather_location_at AS weatherLocationAt
-        FROM access_displays d ORDER BY d.created_at DESC LIMIT 100`).all<DisplayRow>();
-      return json({ displays: result.results.map((row) => ({
+        FROM access_displays d
+        JOIN access_enrollments e ON e.id = d.enrollment_id
+        LEFT JOIN access_display_sessions s ON s.display_id = d.id
+        WHERE ${scope === 'active' ? '' : 'NOT'} (d.revoked_at IS NULL AND d.expires_at > ?
+          AND s.display_id IS NOT NULL AND s.expires_at > ? AND e.status = 'consumed')
+        ${cursor ? 'AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?))' : ''}
+        ORDER BY d.created_at DESC, d.id DESC LIMIT ?`)
+        .bind(now, now, ...(cursor ? [cursor.at, cursor.at, cursor.id] : []), LIST_PAGE_SIZE + 1).all<DisplayRow>();
+      const rows = result.results.slice(0, LIST_PAGE_SIZE);
+      const last = rows[rows.length - 1];
+      const nextCursor = result.results.length > LIST_PAGE_SIZE && last
+        ? `v1:${scope}:${last.createdAt}:${last.id}` : null;
+      return json({ scope, nextCursor, displays: rows.map((row) => ({
         id: row.id,
         name: row.name,
         createdAt: row.createdAt,
-        expiresAt: row.expiresAt,
+        expiresAt: row.sessionExpiresAt === null ? row.expiresAt : Math.min(row.expiresAt, row.sessionExpiresAt),
         revoked: row.revokedAt !== null,
         revokedAt: row.revokedAt,
+        expired: row.expiresAt <= now || (row.sessionExpiresAt !== null && row.sessionExpiresAt <= now),
+        inactive: row.sessionExpiresAt === null || row.enrollmentStatus !== 'consumed',
         device: { type: row.deviceType, browser: row.browserLabel, os: row.osLabel },
         lastSeenAt: row.lastSeenAt,
         weatherArea: row.weatherLocation ? { label: row.weatherLocation, timeZone: row.weatherTimeZone, updatedAt: row.weatherLocationAt } : null,
       })) });
-    }
-
-    const ownerKey = 'admin-owner';
-    if (!await takeRateLimit(db, ownerKey, now, RATE_MINUTE_SECONDS, 30)) {
-      return errorResponse(429, 'rate_limited', { 'Retry-After': String(RATE_MINUTE_SECONDS) });
     }
 
     if (route === '/api/admin/label') {
@@ -524,7 +530,7 @@ export async function handleAccessRequest(
   }
 }
 
-async function readDisplaySession(
+export async function readDisplaySession(
   request: Request,
   db: D1Database,
 ): Promise<{ id: string; expiresAt: number } | null> {
@@ -580,16 +586,21 @@ export async function refreshDisplaySession(
     if (session.expiresAt - now > SESSION_IDLE_SECONDS - SESSION_RENEW_SECONDS) return null;
 
     const expiresAt = now + SESSION_IDLE_SECONDS;
+    const tokenHash = await hash(`session:${token}`);
     const batch = await db.batch([
-      db.prepare(`UPDATE access_displays SET expires_at = ?
-        WHERE id = ? AND revoked_at IS NULL AND expires_at > ? RETURNING id`)
-        .bind(expiresAt, session.id, now),
+      db.prepare(`UPDATE access_displays SET expires_at = MAX(expires_at, ?)
+        WHERE id = ? AND revoked_at IS NULL AND expires_at > ?
+          AND EXISTS (SELECT 1 FROM access_display_sessions s JOIN access_enrollments e ON e.display_id = s.display_id
+            WHERE s.display_id = ? AND s.token_hash = ? AND s.expires_at = ? AND e.status = 'consumed')
+        RETURNING id`)
+        .bind(expiresAt, session.id, now, session.id, tokenHash, session.expiresAt),
       db.prepare(`UPDATE access_display_sessions SET expires_at = ?
-        WHERE display_id = ? AND expires_at > ?
+        WHERE display_id = ? AND token_hash = ? AND expires_at = ?
           AND EXISTS (SELECT 1 FROM access_displays d
-            WHERE d.id = ? AND d.revoked_at IS NULL AND d.expires_at > ?)
+            WHERE d.id = ? AND d.revoked_at IS NULL AND d.expires_at > ?
+            AND EXISTS (SELECT 1 FROM access_enrollments e WHERE e.display_id = d.id AND e.status = 'consumed'))
         RETURNING token_hash`)
-        .bind(expiresAt, session.id, now, session.id, now),
+        .bind(expiresAt, session.id, tokenHash, session.expiresAt, session.id, now),
     ]);
     if (batch[0]?.results?.length !== 1 || batch[1]?.results?.length !== 1) return null;
     return cookie(DISPLAY_COOKIE, token, SESSION_IDLE_SECONDS);
@@ -624,13 +635,9 @@ export async function limitDisplayBootstrap(
   db: D1Database,
   sessionId: string,
 ): Promise<boolean> {
-  try {
-    const url = new URL(request.url);
-    if (url.protocol !== 'https:' || !/^[0-9a-f-]{36}$/i.test(sessionId)) return false;
-    const now = nowSeconds();
-    const sessionHash = await hash(`bootstrap-session:${sessionId}`);
-    return await takeRateLimit(db, `bootstrap:${sessionHash}`, now, RATE_MINUTE_SECONDS, 12);
-  } catch {
-    return false;
-  }
+  const url = new URL(request.url);
+  if (url.protocol !== 'https:' || !/^[0-9a-f-]{36}$/i.test(sessionId)) return false;
+  const now = nowSeconds();
+  const sessionHash = await hash(`bootstrap-session:${sessionId}`);
+  return takeRateLimit(db, `bootstrap:${sessionHash}`, now, RATE_MINUTE_SECONDS, 12);
 }

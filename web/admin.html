@@ -24,11 +24,14 @@
       <section aria-labelledby="displays-title">
         <h2 id="displays-title">Active browser sessions</h2>
         <p class="small-note">Names are owner labels, not device identity. Device/browser details are approximate and spoofable. Location is the last successful weather area, not physical or IP location; it remains after ZIP reset or failed lookup.</p>
+        <p class="small-note">Each page shows up to 100 sessions. Next moves to older entries; Refresh starts again. Sessions may expire or be revoked while browsing.</p>
         <button class="text-button" id="admin-refresh" type="button">Refresh sessions</button>
         <ul class="admin-list" id="admin-displays"></ul>
+        <button class="text-button" id="active-next" type="button" hidden>Next active page</button>
         <details class="revoked-history" id="revoked-history" hidden>
-          <summary id="revoked-summary">Show revoked sessions</summary>
+          <summary id="revoked-summary">Show expired or revoked sessions</summary>
           <ul class="admin-list revoked-list" id="revoked-displays"></ul>
+          <button class="text-button" id="history-next" type="button" hidden>Next history page</button>
         </details>
       </section>
       <p class="small-note">Owner authentication is performed by Cloudflare Access. No owner password or provider credential belongs on the frame.</p>

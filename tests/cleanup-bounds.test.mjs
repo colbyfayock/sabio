@@ -34,7 +34,11 @@ function post(path, body = '{}', headers = {}) {
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const cookieValue = () => randomBytes(32).toString('hex');
 
+const allowAdmission = { async limit() { return { success: true }; } };
 const managedEnv = (db) => ({
+  PUBLIC_ADMISSION_GLOBAL: allowAdmission,
+  PUBLIC_ADMISSION_CLIENT: allowAdmission,
+  OWNER_ADMISSION_CLIENT: allowAdmission,
   APP_MODE: 'managed',
   APP_ORIGIN: ORIGIN,
   ACCESS_TEAM_DOMAIN: 'https://sample-team.cloudflareaccess.com',
@@ -154,15 +158,26 @@ test('scheduled handler runs one bounded cleanup batch independently of traffic'
   t.after(() => db.close());
   const now = Math.floor(Date.now() / 1000);
   seedSession(db, now, { expiresAt: now - 60 });
-  db.sqlite.prepare('INSERT INTO access_rate_limits (bucket_key, window_start, count, expires_at) VALUES (?, ?, 1, ?)')
-    .run('expired', now - 120, now - 60);
+  const insertWindow = db.sqlite.prepare(
+    'INSERT INTO access_rate_limits (bucket_key, window_start, count, expires_at) VALUES (?, ?, 1, ?)',
+  );
+  for (let index = 0; index < 510; index += 1) {
+    insertWindow.run(`expired-${index}`, now - 120, now - 60);
+  }
+  insertWindow.run('live', now, now + 60);
 
   const before = db.stats();
-  await worker.scheduled({ cron: '*/15 * * * *' }, { DB: db });
+  await worker.scheduled({ cron: '*/5 * * * *' }, { DB: db });
   assert.equal(db.stats().batches - before.batches, 1);
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM access_rate_limits').get().count, 0);
+  assert.equal(db.stats().statements - before.statements, 6);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM access_rate_limits WHERE bucket_key != 'live'").get().count, 10);
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM access_display_sessions').get().count, 0);
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM access_displays').get().count, 0);
+  await worker.scheduled({ cron: '*/5 * * * *' }, { DB: db });
+  assert.deepEqual(
+    db.sqlite.prepare('SELECT bucket_key FROM access_rate_limits').all().map((row) => row.bucket_key),
+    ['live'],
+  );
 });
 
 test('authenticated bootstrap polling is bounded without cleanup work', async (t) => {
@@ -183,4 +198,23 @@ test('authenticated bootstrap polling is bounded without cleanup work', async (t
   const after = db.stats();
   assert.equal(after.batches - before.batches, 0, 'bootstrap never runs cleanup');
   assert.ok(after.queries - before.queries <= 60, 'one session read plus one budget write per poll');
+});
+
+test('bootstrap reports unavailable storage without asking the display to pair again', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const { token } = seedSession(db, Math.floor(Date.now() / 1000));
+  const headers = { Cookie: `__Host-sabio_display=${token}` };
+  const broken = [
+    { prepare() { throw new Error('private storage diagnostic'); } },
+    { prepare(sql) {
+      if (sql.includes('INSERT INTO access_rate_limits')) throw new Error('private budget diagnostic');
+      return db.prepare(sql);
+    } },
+  ];
+  for (const binding of broken) {
+    const response = await worker.fetch(request('/api/bootstrap', { headers }), managedEnv(binding));
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'access_unavailable' });
+  }
 });

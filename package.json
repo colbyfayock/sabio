@@ -21,6 +21,9 @@
     "build:worker": "pnpm build && wrangler deploy --dry-run --outdir build/worker"
   },
   "pnpm": {
+    "overrides": {
+      "miniflare@5.20261019.1-beta>undici": "7.30.2"
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "workerd"

@@ -30,3 +30,15 @@ test('location requests do not enable automatic URL logging or outbound URL trac
   assert.equal(config.observability.logs.invocation_logs, false);
   assert.equal(config.observability.traces.enabled, false);
 });
+
+test('local configuration carries the scheduled rate-window cleanup cadence', () => {
+  assert.deepEqual(config.triggers.crons, ['*/5 * * * *']);
+});
+
+test('native admission bindings use separate public aggregate, public client and owner client namespaces', () => {
+  assert.deepEqual(config.ratelimits, [
+    { name: 'PUBLIC_ADMISSION_GLOBAL', namespace_id: '1001', simple: { limit: 600, period: 60 } },
+    { name: 'PUBLIC_ADMISSION_CLIENT', namespace_id: '1002', simple: { limit: 120, period: 60 } },
+    { name: 'OWNER_ADMISSION_CLIENT', namespace_id: '1003', simple: { limit: 30, period: 60 } },
+  ]);
+});

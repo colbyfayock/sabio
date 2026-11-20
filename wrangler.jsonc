@@ -31,7 +31,7 @@
     "not_found_handling": "404-page"
   },
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
   "dev": {
     "ip": "127.0.0.1",
@@ -49,5 +49,31 @@
       "enabled": false,
       "head_sampling_rate": 0.01
     }
-  }
+  },
+  "ratelimits": [
+    {
+      "name": "PUBLIC_ADMISSION_GLOBAL",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 600,
+        "period": 60
+      }
+    },
+    {
+      "name": "PUBLIC_ADMISSION_CLIENT",
+      "namespace_id": "1002",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    },
+    {
+      "name": "OWNER_ADMISSION_CLIENT",
+      "namespace_id": "1003",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ]
 }

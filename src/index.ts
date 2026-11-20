@@ -5,7 +5,9 @@ import {
   handleAccessRequest,
   limitDisplayBootstrap,
   limitDisplayWeather,
+  readDisplaySession,
   refreshDisplaySession,
+  validIp,
   type DisplaySessionNotice,
 } from './access';
 import { validOwnerConfiguration, verifyOwner } from './owner';
@@ -83,6 +85,51 @@ async function owner(request: Request, env: Env): Promise<boolean> {
   });
 }
 
+/** Fixed groups prevent arbitrary paths/queries/hosts from creating fresh budgets. */
+function admissionGroup(path: string): string | null {
+  if (path === '/api/enrollment/claim') return 'claim';
+  if (path === '/api/bootstrap') return 'bootstrap';
+  if (path === '/api/display') return 'display';
+  if (path === '/api/weather') return 'weather';
+  if (path === '/api/admin/revoke') return 'owner-revoke';
+  if (['/admin', '/api/admin/displays', '/api/admin/pairing', '/api/admin/label'].includes(path)) return 'owner';
+  return null;
+}
+
+async function managedAdmission(request: Request, env: Env, group: string): Promise<Response | null> {
+  const isOwner = group.startsWith('owner');
+  const client = isOwner ? env.OWNER_ADMISSION_CLIENT : env.PUBLIC_ADMISSION_CLIENT;
+  const aggregate = isOwner ? undefined : env.PUBLIC_ADMISSION_GLOBAL;
+  if (!client || (!isOwner && !aggregate)) return json(request, { error: 'admission_unavailable' }, 503);
+  // Trust only the Cloudflare-supplied header. Never use forwarded headers, a
+  // cookie, an unverified JWT subject, or an attacker-selected fallback key.
+  const ip = validIp(request.headers.get('CF-Connecting-IP') ?? '');
+  if (!ip) return json(request, { error: 'origin_not_allowed' }, 403);
+  if (isOwner) {
+    const token = request.headers.get('Cf-Access-Jwt-Assertion');
+    if (!token || token.length > 8192 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
+      return json(request, { error: 'admin_access_denied' }, 401);
+    }
+  }
+  try {
+    // Canonicalize before hashing; equivalent IPv6 spellings share a bounded key.
+    // These hashes are pseudonymous, not anonymous, and must never be logged.
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`admission-ip:${ip.value}`));
+    const clientKey = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    // Public traffic shares one aggregate allowance across all origins/routes.
+    // Unverified owner traffic has only client/group budgets: it cannot spend a
+    // cross-client allowance needed by the real owner. Access must protect every
+    // owner origin/path; these approximate per-location limits do not replace it.
+    if (!(await client.limit({ key: `client:${group}:${clientKey}` })).success
+      || (aggregate && !(await aggregate.limit({ key: 'aggregate:public' })).success)) {
+      return json(request, { error: 'rate_limited' }, 429, { 'Retry-After': '60' });
+    }
+    return null;
+  } catch {
+    return json(request, { error: 'admission_unavailable' }, 503);
+  }
+}
+
 /** All requests enter the Worker first; only explicitly listed static assets escape API routing. */
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -100,13 +147,23 @@ export default {
       return json(request, { status: 'ok', mode: env.APP_MODE === 'managed' ? 'managed' : 'preview', authentication: managedConfiguration(env) ? 'required' : 'not_configured' });
     }
 
+    const group = admissionGroup(path);
+    if (env.APP_MODE === 'managed' && group) {
+      if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
+      if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
+      const origin = request.headers.get('Origin');
+      if (origin !== null && origin !== new URL(request.url).origin) return json(request, { error: 'origin_not_allowed' }, 403);
+      const denial = await managedAdmission(request, env, group);
+      if (denial) return denial;
+    }
+
     if (path === '/api/bootstrap') {
       if (request.method !== 'GET') return json(request, { error: 'method_not_allowed' }, 405, { Allow: 'GET' });
       if (localPreview(request, env)) return json(request, { mode: 'preview' });
       if (!managedConfiguration(env)) return json(request, { error: 'access_not_configured' }, 503);
       if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
       try {
-        const session = await getDisplaySession(request, env.DB);
+        const session = await readDisplaySession(request, env.DB);
         if (!session) return json(request, { mode: 'managed', enrolled: false });
         if (!await limitDisplayBootstrap(request, env.DB, session.id)) {
           return json(request, { error: 'rate_limited' }, 429, { 'Retry-After': '60' });
@@ -187,11 +244,8 @@ export default {
       if (!managedConfiguration(env)) return json(request, { error: 'not_implemented' }, 503);
       if (!isManagedOrigin(request, env)) return json(request, { error: 'origin_not_allowed' }, 403);
       try {
-        // Reuse the API's bounded owner-verification path before serving the admin shell.
+        if (!await owner(request, env)) return json(request, { error: 'admin_access_denied' }, 401);
         const requestOrigin = new URL(request.url).origin;
-        const check = new Request(new URL('/api/admin/displays', requestOrigin), { headers: request.headers });
-        const approval = await handleAccessRequest(check, env.DB, (candidate) => owner(candidate, env), requestOrigin);
-        if (!approval || approval.status !== 200) return secure(request, approval || json(request, { error: 'owner_access_required' }, 403));
         const url = new URL('/admin.html', requestOrigin);
         return secure(request, await env.ASSETS.fetch(new Request(url, { method: request.method })));
       } catch { return json(request, { error: 'admin_unavailable' }, 503); }
@@ -234,7 +288,7 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     if (!env.DB) return;
     try {
-      await cleanupExpired(env.DB);
+      await cleanupExpired(env.DB, undefined, { scheduled: true });
     } catch {
       console.error(JSON.stringify({ event: 'scheduled_cleanup_failed' }));
     }

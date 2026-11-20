@@ -10,14 +10,11 @@ There is no calendar, task integration, private upload, or cloud-album sync.
 
 ## Initial deployment status
 
-The first explicitly approved Free-only batch created one Sabio Worker/D1 database,
-one reusable exact-owner allow policy and one Access application covering only the
-admin UI/API paths on the account's `workers.dev` address. The custom hostname
-`sabio.fayock.com` is also routed to the Worker; its route is declared in the ignored
-production config so subsequent Wrangler deploys preserve it. The owner-local
-configuration, resource/version IDs and setup credentials remain ignored under
-`private/`; the token is never a Worker binding or frontend variable. The public local
-config is unchanged. No paid upgrade or unrelated Access/network rule was applied.
+The first explicitly approved Free-only batch created the Worker, D1 database and
+owner-only Access policy. Deployment hostnames, routes, resource/version IDs and
+setup credentials belong in the ignored owner-local `private/` directory. The token
+is never a Worker binding or frontend variable. The public local config is unchanged.
+No paid upgrade or unrelated Access/network rule was applied.
 
 Remote checks of the earlier flow passed: HTTPS shell/security headers, managed
 bootstrap, unapproved weather/display denial, forged cookie rejection, owner-path login
@@ -25,11 +22,9 @@ redirects, CSRF denial, pending enrollment and private-path 404s. The new deploy
 was smoke-tested for removed public endpoints, Access redirects, cross-origin claim
 denial and invalid-code denial. One owner-run pairing loaded the dashboard; replay was
 denied and the owner confirmed the notification email arrived. Revocation of that test
-session remains pending. After the pairing deploy, the custom hostname temporarily
-returned a 307 to the portfolio because its Worker route was missing from the production
-config. The existing proxied hostname was restored as a Worker Route without changing
-DNS; custom `/`, `/health`, `/api/bootstrap`, display denial and Access redirect checks
-now pass. Hardware remains a gate.
+session remains pending. Keep all intended routes in the production config and
+verify HTTPS, bootstrap, display denial and Access redirects on each managed origin
+after deployment. Hardware remains a gate.
 The first release has no earlier good deployed version to roll back to; do not assume
 an untested code rollback or database recovery procedure has been proven.
 
@@ -40,9 +35,20 @@ nickname. No raw UA, ZIP, coordinates, GPS or IP-derived location is stored for 
 features. See the admin metadata disclosure in [security](../SECURITY.md).
 
 Additive `0004_access_cleanup_indexes.sql` is applied and the Worker now runs the
-bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowlisted
-(the custom hostname and the `workers.dev` address); both serve the security headers
-and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
+bounded cleanup batch on a `*/15` cron schedule. Keep the managed origin allowlist
+in the production config and deny unlisted origins.
+
+The managed admission bindings are `PUBLIC_ADMISSION_CLIENT`,
+`PUBLIC_ADMISSION_GLOBAL` and `OWNER_ADMISSION_CLIENT`. The next managed deployment
+must carry all three in its production config, using account-unique namespace IDs,
+and reconcile the production cron with the checked-in five-minute cadence. The public client check
+must run before the public aggregate check; owner preverification has no shared
+aggregate namespace, and verified owner D1 accounting keeps a separate reserved
+revocation budget. Workers native rate limits are approximate per Cloudflare
+location/POP rather than account-global, so release review must measure expected
+distributed traffic and confirm no alternate origin bypasses Cloudflare or the
+Access policy. `CF-Connecting-IP` and the Access assertion are trusted only on
+requests that traverse the intended Cloudflare path.
 
 Owner-initiated pairing reuses the existing enrollment table and requires no new
 migration. Existing display sessions remain valid. Legacy display-initiated pending
@@ -70,6 +76,15 @@ When the repository is checked out alone, use the equivalent package commands at
 its root. `build:worker` is a packaging dry run, not an upload. Keep preview servers
 on loopback. Inspect the output allowlist: display/admin HTML, CSS, app/admin JS and favicon;
 no mockups, private settings, captures, secrets, state databases or source maps.
+
+The package manifest scopes an Undici override to the version of Miniflare pinned
+by Wrangler. Remove the override once the chosen upstream release resolves an
+Undici version that clears the advisory check. Keep the D1 fixture's separate
+metadata-fetch flag disabled for repeatable offline checks.
+
+CI runs `pnpm audit --audit-level=low` on pull requests, pushes, and a weekly
+schedule. This scans the full dependency tree without requiring GitHub's
+Dependency Graph.
 
 Use synthetic data in browser tests. Verify both themes at 1280×800 and a small
 viewport; ZIP Save/Cancel/Reset; keyboard focus trapping/restoration in both dialogs;
@@ -193,8 +208,25 @@ private account data; this backlog entry authorizes none of those operations.
 
 Record the previous good Worker version and schema compatibility before release.
 A Worker code rollback does **not** restore database contents or undo migrations.
-Prefer backward-compatible schema changes; test data recovery separately. Never
-restore an old database in a way that silently resurrects revoked credentials.
+Prefer backward-compatible schema changes and rehearse data recovery separately.
+
+For a separately approved restore, gate managed traffic on every origin and allow
+in-flight requests to finish before restoring or changing the database binding.
+Keep the gate in place while validating the target database and schema, including
+any additive migrations required by the version that will serve traffic. With
+the gate still closed, apply
+[`invalidate-restored-display-credentials.sql`](../scripts/invalidate-restored-display-credentials.sql)
+to that restored database. It expires outstanding codes, preserves existing
+revocation timestamps, revokes the remaining displays, and deletes session
+credential hashes. Displays must pair again after recovery.
+
+Verify that there are zero display session rows, zero display rows with a
+`NULL` `revoked_at`, and zero pending or approved enrollment rows with a
+nonzero expiry or a populated code or pending hash. The script is safe to retry
+while all managed traffic is gated. After an interruption, repeat the script and
+all three checks before reopening. Rehearse the procedure using synthetic data
+and confirm previously issued credentials remain denied and new enrollment works.
+Keep the verified version, database identity, and result in private release records.
 
 If authorization fails or sensitive data is exposed, disable affected routes/access,
 revoke compromised sessions or credentials, and inspect sanitized diagnostics. Do

@@ -223,10 +223,11 @@ test('photo load failures are bounded and a failed replacement keeps the last go
   assert.equal(replacement.src, prefs.urls[1]);
   page.fail(replacement);
   assert.equal(replacement.src, prefs.urls[0]);
-  page.fail(replacement);
+  page.runTimer(15000);
 
   assert.equal(good.className, 'photo active');
   assert.equal(replacement.className, 'photo');
+  assert.equal(replacement.src, '');
   assert.match(page.element('photo-status').textContent, /Photos unavailable/);
   assert.ok([...page.timers.values()].some((timer) => timer.delay === 60000));
 });
