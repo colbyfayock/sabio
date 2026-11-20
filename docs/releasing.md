@@ -10,14 +10,11 @@ There is no calendar, task integration, private upload, or cloud-album sync.
 
 ## Initial deployment status
 
-The first explicitly approved Free-only batch created one Sabio Worker/D1 database,
-one reusable exact-owner allow policy and one Access application covering only the
-admin UI/API paths on the account's `workers.dev` address. The custom hostname
-`sabio.fayock.com` is also routed to the Worker; its route is declared in the ignored
-production config so subsequent Wrangler deploys preserve it. The owner-local
-configuration, resource/version IDs and setup credentials remain ignored under
-`private/`; the token is never a Worker binding or frontend variable. The public local
-config is unchanged. No paid upgrade or unrelated Access/network rule was applied.
+The first explicitly approved Free-only batch created the Worker, D1 database and
+owner-only Access policy. Deployment hostnames, routes, resource/version IDs and
+setup credentials belong in the ignored owner-local `private/` directory. The token
+is never a Worker binding or frontend variable. The public local config is unchanged.
+No paid upgrade or unrelated Access/network rule was applied.
 
 Remote checks of the earlier flow passed: HTTPS shell/security headers, managed
 bootstrap, unapproved weather/display denial, forged cookie rejection, owner-path login
@@ -25,11 +22,9 @@ redirects, CSRF denial, pending enrollment and private-path 404s. The new deploy
 was smoke-tested for removed public endpoints, Access redirects, cross-origin claim
 denial and invalid-code denial. One owner-run pairing loaded the dashboard; replay was
 denied and the owner confirmed the notification email arrived. Revocation of that test
-session remains pending. After the pairing deploy, the custom hostname temporarily
-returned a 307 to the portfolio because its Worker route was missing from the production
-config. The existing proxied hostname was restored as a Worker Route without changing
-DNS; custom `/`, `/health`, `/api/bootstrap`, display denial and Access redirect checks
-now pass. Hardware remains a gate.
+session remains pending. Keep all intended routes in the production config and
+verify HTTPS, bootstrap, display denial and Access redirects on each managed origin
+after deployment. Hardware remains a gate.
 The first release has no earlier good deployed version to roll back to; do not assume
 an untested code rollback or database recovery procedure has been proven.
 
@@ -40,9 +35,8 @@ nickname. No raw UA, ZIP, coordinates, GPS or IP-derived location is stored for 
 features. See the admin metadata disclosure in [security](../SECURITY.md).
 
 Additive `0004_access_cleanup_indexes.sql` is applied and the Worker now runs the
-bounded cleanup batch on a `*/15` cron schedule. Two managed origins are allowlisted
-(the custom hostname and the `workers.dev` address); both serve the security headers
-and redirect `/admin` to Access when signed out. Treat unlisted origins as denied.
+bounded cleanup batch on a `*/15` cron schedule. Keep the managed origin allowlist
+in the production config and deny unlisted origins.
 
 The managed admission bindings are `PUBLIC_ADMISSION_CLIENT`,
 `PUBLIC_ADMISSION_GLOBAL` and `OWNER_ADMISSION_CLIENT`. The next managed deployment
