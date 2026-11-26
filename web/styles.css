@@ -11,8 +11,9 @@ button:focus, input:focus, select:focus, textarea:focus, a:focus { outline: 2px 
 a { color: inherit; }
 .frame { display: grid; grid-template-columns: 38% 62%; width: 100%; height: 100vh; min-height: 740px; }
 .rail { display: flex; min-width: 0; flex-direction: column; padding: 30px 42px 22px; border-right: 1px solid var(--rule); background: var(--paper); }
+:root[data-theme="light"] .rail { --muted: #5d675f; background: #e9e8e2; }
 .rail-head { position: relative; display: flex; align-items: center; justify-content: space-between; padding-bottom: 18px; border-bottom: 1px solid var(--rule); }
-.brand { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 27px; font-weight: 400; letter-spacing: .025em; }
+.brand { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 30px; font-weight: 400; letter-spacing: .025em; }
 .brand-toggle { min-width: 0; min-height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: none; }
 .options-panel { position: absolute; z-index: 6; top: calc(100% + 8px); left: 0; width: min(300px, calc(100vw - 50px)); max-height: calc(100vh - 120px); overflow-y: auto; padding: 18px 20px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); box-shadow: 0 12px 32px rgba(0,0,0,.2); }
 .options-panel h2 { margin: 0 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: 22px; font-weight: 400; }
@@ -23,26 +24,27 @@ a { color: inherit; }
 .options-attribution p { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .options-attribution p:last-child { margin-bottom: 0; }
 .content { margin: auto 0; padding: 24px 0 18px; }
-.time { display: flex; align-items: baseline; margin: 0 0 8px -4px; white-space: nowrap; font-size: 100px; font-weight: 300; letter-spacing: -.075em; line-height: .98; font-variant-numeric: tabular-nums; }
-.meridiem { margin-left: 12px; color: var(--accent); font-size: 17px; font-weight: 500; letter-spacing: .06em; }
-.date { margin: 0; color: var(--muted); font-family: Georgia, "Times New Roman", serif; font-size: 24px; }
+.time { display: flex; align-items: baseline; margin: 0 0 8px; white-space: nowrap; font-size: 112px; font-weight: 300; letter-spacing: -.075em; line-height: .98; font-variant-numeric: tabular-nums; }
+.meridiem { margin-left: 12px; color: var(--accent); font-size: 20px; font-weight: 500; letter-spacing: .06em; }
+.date { margin: 0; color: var(--muted); font-family: Georgia, "Times New Roman", serif; font-size: 28px; }
+.content .small-note { font-size: 14px; }
 .small-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: break-word; }
 .small-note:empty { display: none; }
 .divider { height: 1px; margin: 25px 0 20px; background: var(--rule); }
 .weather-main { display: flex; align-items: center; margin-top: 0; }
-.temperature { margin-right: 14px; font-size: 60px; font-weight: 300; letter-spacing: -.06em; line-height: 1; white-space: nowrap; }
-.weather-summary { min-width: 0; flex: 0 1 auto; }
-.condition { font-family: Georgia, "Times New Roman", serif; font-size: 16px; }
-.weather-icon { display: flex; flex: 0 0 46px; align-items: center; justify-content: center; width: 46px; height: 46px; color: var(--accent); }
-.weather-icon svg { display: block; width: 46px; height: 46px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.weather-range { display: flex; flex: 0 0 auto; flex-direction: column; justify-content: center; gap: 2px; margin-left: 8px; color: var(--muted); font-size: 18px; letter-spacing: .02em; line-height: 1.1; white-space: nowrap; }
+.temperature { margin-right: 14px; font-size: 70px; font-weight: 300; letter-spacing: -.06em; line-height: 1; white-space: nowrap; }
+.weather-summary { min-width: 0; flex: 0 1 auto; overflow-wrap: break-word; }
+.condition { font-family: Georgia, "Times New Roman", serif; font-size: 18px; }
+.weather-icon { display: flex; align-items: center; justify-content: center; width: 50px; max-width: 100%; height: 50px; color: var(--accent); }
+.weather-icon svg { display: block; width: 50px; max-width: 100%; height: 50px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.weather-range { display: flex; flex: 0 0 auto; flex-direction: column; justify-content: center; gap: 2px; margin-left: 8px; color: var(--muted); font-size: 20px; letter-spacing: .02em; line-height: 1.1; white-space: nowrap; }
 .zip-label { color: var(--muted); font-size: 12px; letter-spacing: .04em; }
 .text-button { padding: 0 5px; border: 0; background: transparent; color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .text-button:hover { text-decoration: underline; }
 select { min-width: 112px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 0; background: var(--field); color: var(--ink); font-size: 12px; }
 .scene { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #53645f; }
-.photo { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.2s ease; }
-.photo.active { opacity: 1; z-index: 1; }
+.photo { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+.photo.active { opacity: 1; z-index: 1; transition: opacity 1.2s ease; }
 .photo.previous { opacity: 1; z-index: 0; }
 .photo-fallback { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; color: #f7f5ed; text-align: center; font-family: Georgia, serif; font-size: 27px; line-height: 1.7; }
 .photo-fallback span { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 12px; }
@@ -89,9 +91,19 @@ select { min-width: 112px; min-height: 44px; padding: 0 12px; border: 1px solid 
 .revoked-history summary { min-height: 52px; padding: 16px 4px; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: .1em; list-style-position: inside; text-transform: uppercase; }
 .revoked-list li { opacity: .78; }
 .revoked-status { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+@media (max-width: 1199px) and (min-width: 701px) {
+  .time { font-size: 92px; }
+  .temperature { font-size: 60px; }
+}
 @media (max-width: 1000px) and (min-width: 701px) {
   .rail { padding-left: 24px; padding-right: 24px; }
   .time { font-size: 68px; }
+}
+@media (max-width: 1000px) and (min-width: 701px), (max-width: 420px) {
+  .temperature { font-size: 54px; }
+  .weather-main { flex-wrap: wrap; }
+  .weather-summary { flex: 1 1 70px; }
+  .weather-range { flex-basis: 100%; flex-direction: row; justify-content: flex-start; column-gap: 14px; margin: 8px 0 0; }
 }
 @media (max-width: 700px) {
   html, body { height: auto; min-height: 100%; }
@@ -100,8 +112,11 @@ select { min-width: 112px; min-height: 44px; padding: 0 12px; border: 1px solid 
   .photo-status { bottom: 14px; left: 15px; right: 15px; }
   .rail { padding: 20px 25px 18px; border-bottom: 1px solid var(--rule); border-right: 0; }
   .content { padding: 30px 0 24px; }
-  .time { font-size: 100px; }
   .dialog-shade { padding: 12px; }
   .dialog { padding: 22px; }
 }
-@media (prefers-reduced-motion: reduce) { .photo { transition: none; } }
+@media (max-width: 420px) {
+  .time { font-size: 78px; }
+  .date { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) { .photo.active { transition: none; } }

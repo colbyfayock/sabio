@@ -21,6 +21,7 @@ export function initializePhotos(mode: 'preview' | 'managed' = 'preview'): void 
   let timer: number | null = null;
   let loadTimer: number | null = null;
   let fadeTimer: number | null = null;
+  let pendingDirection: -1 | 1 | null = null;
   const reducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
   const say = (message: string): void => { if (status) status.textContent = message; };
   const clearTimer = (): void => { if (timer !== null) window.clearTimeout(timer); timer = null; };
@@ -31,7 +32,7 @@ export function initializePhotos(mode: 'preview' | 'managed' = 'preview'): void 
 
   // Each load and fade belongs to one generation; late events cannot replace a newer source.
   function show(target: number, attempts = 0): void {
-    if (loading) return;
+    if (loading || fadeTimer !== null) return;
     clearTimer();
     loading = true;
     const generation = ++token;
@@ -63,7 +64,6 @@ export function initializePhotos(mode: 'preview' | 'managed' = 'preview'): void 
       if (!image.naturalWidth) { failed(); return; }
       cleanupLoad();
       const previous = active;
-      if (fadeTimer !== null) window.clearTimeout(fadeTimer);
       frames.forEach((frame) => { frame.className = 'photo'; });
       if (previous >= 0 && previous !== slot) frames[previous].className = 'photo previous';
       // Flush the hidden frame before adding the fade class, including cached images.
@@ -73,11 +73,16 @@ export function initializePhotos(mode: 'preview' | 'managed' = 'preview'): void 
       index = target;
       if (fallback) fallback.hidden = true;
       say(notice);
-      fadeTimer = window.setTimeout(() => {
-        if (generation !== token) return;
-        if (previous >= 0 && previous !== active) frames[previous].className = 'photo';
+      const finishFade = (): void => {
+        if (previous >= 0) frames[previous].className = 'photo';
         fadeTimer = null;
-      }, reducedMotion ? 0 : 1250);
+        const direction = pendingDirection;
+        pendingDirection = null;
+        if (direction !== null && !document.hidden) movePhoto(direction);
+      };
+      // Keep both image sources intact until the incoming layer is opaque.
+      if (previous >= 0 && !reducedMotion) fadeTimer = window.setTimeout(finishFade, 1250);
+      else finishFade();
       schedule(preferences.holdSeconds * 1000 + (reducedMotion ? 0 : 1200));
     };
     loadTimer = window.setTimeout(failed, LOAD_TIMEOUT);
@@ -86,6 +91,10 @@ export function initializePhotos(mode: 'preview' | 'managed' = 'preview'): void 
 
   const movePhoto = (direction: -1 | 1): void => {
     if (loading || index < 0 || urls.length < 2) return;
+    if (fadeTimer !== null) {
+      pendingDirection = direction;
+      return;
+    }
     show((index + direction + urls.length) % urls.length);
   };
   previous?.addEventListener('click', () => movePhoto(-1));

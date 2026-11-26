@@ -218,7 +218,31 @@ test('left/right photo zones navigate and rotation defaults to a ten-minute hold
   page.complete(second);
   assert.equal(second.className, 'photo active');
   page.element('photo-next').fire('click');
+  page.runTimer(1250);
   assert.equal(page.image('photoA').src, prefs.urls[0]);
+});
+
+test('rapid navigation does not overwrite a layer that is still visible', () => {
+  const prefs = photoPreferences(['one', 'two', 'three'].map((name) => `https://photos.example.org/${name}.jpg`));
+  const page = browser({ storage: memoryStorage({ [PHOTO_STORAGE_KEY]: JSON.stringify(prefs) }) });
+  const first = page.image('photoA');
+  const second = page.image('photoB');
+  page.complete(first);
+  page.element('photo-next').fire('click');
+  page.complete(second);
+
+  page.element('photo-previous').fire('click');
+  page.element('photo-next').fire('click');
+  assert.equal(first.src, prefs.urls[0]);
+  assert.equal(first.className, 'photo previous');
+  assert.equal(second.src, prefs.urls[1]);
+
+  page.runTimer(1250);
+  assert.equal(first.className, 'photo');
+  assert.equal(first.src, prefs.urls[2]);
+  page.complete(first);
+  assert.equal(second.className, 'photo previous');
+  assert.equal(first.className, 'photo active');
 });
 
 test('photo load failures are bounded and a failed replacement keeps the last good frame', () => {

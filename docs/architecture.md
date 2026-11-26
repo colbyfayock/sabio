@@ -33,6 +33,9 @@ Firefox 68 hardware. The Horizon layout places time/weather in the left 38% and 
 photograph in the right 62%. The clock/date and automatic theme use the ZIP-derived
 IANA timezone from the weather response; browser-local fallback is labeled while
 unresolved. The timezone remains in memory, not persistent offline state.
+At the 1280×800 frame size, the clock and weather use larger type without changing
+the rail padding. On narrow layouts the daily high and low can move below the
+current conditions so three-digit temperatures and long labels remain readable.
 There is no agenda/checklist UI or background demo polling. Weather refreshes
 every 10 minutes, with a 12-second timeout and backoff up to 30 minutes. The UI shows
 timestamps and stale status, clears old data on ZIP change/reset, and has no sample
@@ -92,6 +95,8 @@ DNS resolution or safe redirects, nor constrain decoded image memory. Use small 
 not sensitive URLs or token-bearing links. No uploads or private album integration.
 Two image layers use generation-scoped load/fade callbacks, 15-second load timeouts,
 bounded source attempts and delayed retries. Last good photos remain on load errors.
+During a fade, both image sources stay in place and the most recent navigation tap
+waits until the incoming photo is opaque.
 Existing photo source URLs and hold duration persist in this browser and remain read-only
 in the current UI. Appearance is automatic only, using light 07:00–18:59 and dark
 19:00–06:59 in the displayed timezone; manual modes are no longer exposed or stored.
