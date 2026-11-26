@@ -180,7 +180,7 @@ See [access control](docs/access-control.md) before configuring managed mode.
 - Existing photo URLs and hold values are browser-local, not secrets or authenticated
   settings. Image hosts receive ordinary network metadata; referrers are suppressed.
   The local preview continues to load these sources directly. In managed mode, owner
-  administration can import up to 12 explicitly selected Google Photos stills per
+  administration can import up to 25 explicitly selected Google Photos stills per
   session as a snapshot; it does not import or continuously sync a whole album. More
   can be added with another Picker session. Video files are rejected.
 - Managed photos are stored in a non-public R2 bucket and delivered only through Worker
@@ -193,7 +193,7 @@ See [access control](docs/access-control.md) before configuring managed mode.
   provider-level access. Local development uses R2's local emulator (`remote: false`).
   Production R2, migrations `0005`/`0006` and the Worker version are deployed; real
   owner OAuth/photo/display validation is still pending.
-- Imports are bounded to 12 items and 50 MiB per session, 8 MiB per image, 100 photos and
+- Imports are bounded to 25 items and 50 MiB per session, 8 MiB per image, 100 photos and
   an 8 GiB application storage ceiling. These limits do not guarantee account-wide usage
   stays free; confirm current R2/Workers billing controls before any live setup.
 - Use reasonably sized JPEGs (about 1200 pixels wide) for the frame. Source count and

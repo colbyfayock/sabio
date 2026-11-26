@@ -1,4 +1,5 @@
 import { boundedJson } from './weather';
+import { MAX_IMPORT_PHOTOS } from '../shared/photo-limits';
 
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -8,7 +9,6 @@ const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 const MAX_STORAGE_BYTES = 8 * 1024 * 1024 * 1024;
 const MAX_PHOTOS = 100;
-const MAX_IMPORT_PHOTOS = 12;
 const OAUTH_STATE_SECONDS = 10 * 60;
 const MAX_BODY_BYTES = 1024;
 
@@ -110,12 +110,12 @@ async function decrypt(env: Env, value: string): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(plaintext);
 }
 
-async function readBody(request: Request): Promise<Record<string, unknown> | null> {
+async function readBody(request: Request, maxBytes = MAX_BODY_BYTES): Promise<Record<string, unknown> | null> {
   if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers.get('Content-Type') || '')) return null;
   const length = request.headers.get('Content-Length');
-  if (length && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES)) return null;
+  if (length && (!/^\d+$/.test(length) || Number(length) > maxBytes)) return null;
   try {
-    const value = await boundedJson(request, MAX_BODY_BYTES);
+    const value = await boundedJson(request, maxBytes);
     return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
   } catch { return null; }
 }
@@ -247,7 +247,8 @@ async function createPickerSession(env: Env, accessToken: string, expiresIn: num
   let session: Record<string, unknown>;
   try {
     session = await googleJson(`${PICKER_API}/sessions`, accessToken, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pickingConfig: { maxItemCount: String(MAX_IMPORT_PHOTOS) } }),
     });
   } catch (cause) {
     if (cause instanceof GoogleApiError) throw cause;
@@ -788,7 +789,8 @@ async function removePhoto(env: Env, photoId: string): Promise<Response> {
 }
 
 async function reorderPhotos(env: Env, request: Request): Promise<Response> {
-  const body = await readBody(request);
+  // A full library's 100 UUIDs use about 3.9 KiB in the admin's compact JSON.
+  const body = await readBody(request, 4096);
   if (!body || Object.keys(body).length !== 1 || !Array.isArray(body.ids) || body.ids.length > MAX_PHOTOS ||
     body.ids.some((id) => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) return error(400, 'invalid_request');
   const photos = await env.DB.prepare('SELECT id FROM photo_items ORDER BY position, created_at LIMIT ?').bind(MAX_PHOTOS).all<{ id: string }>();

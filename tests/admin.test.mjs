@@ -27,7 +27,7 @@ class Element {
   async fire(type, event = { preventDefault() {} }) { return this.listeners.get(type)?.(event); }
 }
 
-function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, status: 201 }, photos = { photos: [], activeImport: null, googleConnected: false }) {
+function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, status: 201 }, photos = { photos: [], activeImport: null, googleConnected: false }, importPhoto) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
@@ -35,12 +35,19 @@ function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, 
   };
   const document = { getElementById: element, createElement: (tag) => new Element(tag) };
   const navigations = [];
-  const window = { setTimeout: () => 1, clearTimeout() {}, location: { search: '', assign(value) { navigations.push(value); } } };
+  const timers = new Map();
+  let lastTimer = 0;
+  const window = {
+    setTimeout(callback, delay) { timers.set(++lastTimer, { callback, delay }); return lastTimer; },
+    clearTimeout(id) { timers.delete(id); },
+    location: { search: '', assign(value) { navigations.push(value); } },
+  };
   const calls = [];
   const fetch = async (path, options = {}) => {
     calls.push({ path, options });
     if (path === '/api/admin/displays') return { ok: true, status: 200, json: async () => ({ displays }) };
     if (path === '/api/admin/photos') return { ok: true, status: 200, json: async () => photos };
+    if (path === '/api/admin/photos/import' && importPhoto) return importPhoto();
     if (path === '/api/admin/photos/connect') {
       if (photos.googleConnected) {
         photos.activeImport = { id: '123e4567-e89b-12d3-a456-426614174000', pickerUri: 'https://photos.google.com/picker?session=synthetic' };
@@ -65,8 +72,44 @@ function start(displays, pairing = { code: 'ABCDEFGHJK', expiresAt: 1792670000, 
     throw new Error('unexpected_route');
   };
   vm.runInNewContext(source, { document, window, fetch, AbortController, URL, URLSearchParams, Date, JSON, Number, String, Boolean, Array, Error });
-  return { element, calls, navigations };
+  return { element, calls, navigations, timers };
 }
+
+test('admin completes a 25-photo import after waiting for the server rate limit', async () => {
+  const photos = {
+    photos: [], googleConnected: true,
+    activeImport: { id: '123e4567-e89b-12d3-a456-426614174000', pickerUri: 'https://photos.google.com/picker?session=synthetic' },
+  };
+  let requests = 0;
+  let imported = 0;
+  const app = start([], undefined, photos, () => {
+    requests += 1;
+    if (requests === 14) return Response.json({ error: 'rate_limited' }, {
+      status: 429, headers: { 'Retry-After': '60' },
+    });
+    imported += 1;
+    if (imported === 25) photos.activeImport = null;
+    return Response.json({ done: imported === 25, importedCount: imported });
+  });
+
+  await new Promise(setImmediate);
+  await app.element('photos-import').fire('click');
+  await new Promise(setImmediate);
+  assert.equal(imported, 13);
+  assert.equal(app.element('photos-import').disabled, true);
+  assert.match(app.element('photos-status').textContent, /continue automatically/);
+  const entry = [...app.timers].find(([, timer]) => timer.delay === 60000);
+  assert.ok(entry, 'the Retry-After header controls the wait');
+  app.timers.delete(entry[0]);
+  entry[1].callback();
+  await new Promise(setImmediate);
+
+  assert.equal(imported, 25);
+  assert.equal(requests, 26, 'the throttled request does not consume an import step');
+  assert.equal(app.element('photos-import-panel').hidden, true);
+  assert.equal(app.element('photos-import').disabled, false);
+  assert.equal(app.element('photos-connect').disabled, false, 'another import can start after completion');
+});
 
 test('admin validates and opens the owner-only Picker URL from a Google Photos import', async () => {
   const app = start([], undefined, {

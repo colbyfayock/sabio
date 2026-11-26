@@ -1,4 +1,5 @@
 import { displayDetails } from './display-details';
+import { MAX_IMPORT_PHOTOS } from '../shared/photo-limits';
 
 const status = document.getElementById('admin-status');
 const list = document.getElementById('admin-displays');
@@ -24,9 +25,15 @@ let photosBusy = false;
 let activeImportId: string | null = null;
 let reauthorizeGoogle = false;
 
-async function api(path: string, body?: object): Promise<unknown> {
+class AdminRequestError extends Error {
+  constructor(code: string, readonly retryAfterSeconds: number | null) {
+    super(code);
+  }
+}
+
+async function api(path: string, body?: object, timeoutMs = 12000): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 12000);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(path, {
       method: body ? 'POST' : 'GET', credentials: 'same-origin',
@@ -39,7 +46,10 @@ async function api(path: string, body?: object): Promise<unknown> {
         const value: unknown = await response.json();
         if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string') code = value.error;
       } catch { /* Keep the generic failure when the response is not valid JSON. */ }
-      throw new Error(code);
+      const retryAfter = response.status === 429 && code === 'rate_limited'
+        ? Number(response.headers.get('Retry-After') || 60)
+        : null;
+      throw new AdminRequestError(code, retryAfter);
     }
     return response.status === 204 ? null : await response.json();
   } finally { window.clearTimeout(timeout); }
@@ -62,10 +72,12 @@ function photoError(error: unknown): string {
   const pickerHttpError = /^google_picker_http_(\d{3})$/.exec(code);
   if (pickerHttpError) return `Google Photos rejected the Picker session request (HTTP ${pickerHttpError[1]}). Check the API and OAuth project settings.`;
   if (code === 'picker_session_unavailable') return 'Google authorization worked, but Google Photos could not create a Picker session. Retry; if it continues, check the Photos Picker API configuration.';
-  if (code === 'too_many_photos' || code === 'import_photo_limit') return 'Select no more than 12 photos in one import.';
+  if (code === 'too_many_photos' || code === 'import_photo_limit') return `Select no more than ${MAX_IMPORT_PHOTOS} photos in one import.`;
+  if (code === 'rate_limited') return 'Sabio is temporarily limiting admin requests. Wait a minute, then try again.';
   if (code === 'unsupported_media') return 'The selection includes a video or unsupported image. Select still photos only.';
   if (code === 'photo_count_limit') return 'The private library has reached its photo limit. Remove photos before importing more.';
-  if (code === 'storage_limit' || code === 'import_size_limit') return 'The configured private storage limit would be exceeded.';
+  if (code === 'storage_limit') return 'The configured private storage limit would be exceeded.';
+  if (code === 'import_size_limit') return 'This selection exceeds the 50 MiB import limit. Photos already copied are saved. Cancel this import and select fewer photos.';
   if (code === 'selection_pending') return 'Finish selecting photos in Google Photos, then try again.';
   if (code === 'import_not_found') return 'This selection expired. Start a new Google Photos selection.';
   return 'The private photo request failed. Check the connection and retry.';
@@ -73,9 +85,9 @@ function photoError(error: unknown): string {
 
 interface AdminPhoto { id: string; contentType: string; sizeBytes: number; position: number; createdAt: number; }
 
-async function refreshPhotos(): Promise<void> {
+async function refreshPhotos(loadPhotos = () => api('/api/admin/photos')): Promise<void> {
   try {
-    const value = await api('/api/admin/photos');
+    const value = await loadPhotos();
     if (!value || typeof value !== 'object' || !('photos' in value) || !Array.isArray(value.photos) || value.photos.length > 100 ||
         !('googleConnected' in value) || typeof value.googleConnected !== 'boolean') {
       throw new Error('invalid_response');
@@ -111,13 +123,13 @@ async function refreshPhotos(): Promise<void> {
         button.type = 'button';
         button.className = 'text-button';
         button.textContent = label;
-        button.disabled = photosBusy || (direction < 0 ? index === 0 : index === valid.length - 1);
+        button.disabled = direction < 0 ? index === 0 : index === valid.length - 1;
         button.addEventListener('click', () => {
           if (photosBusy) return;
           const reordered = valid.map((entry) => entry.id);
           const target = index + direction;
           [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
-          void api('/api/admin/photos/reorder', { ids: reordered }).then(refreshPhotos)
+          void api('/api/admin/photos/reorder', { ids: reordered }).then(() => refreshPhotos())
             .catch((failure) => sayPhotos(photoError(failure)));
         });
         actions.appendChild(button);
@@ -126,7 +138,6 @@ async function refreshPhotos(): Promise<void> {
       remove.type = 'button';
       remove.className = 'text-button';
       remove.textContent = 'Remove photo';
-      remove.disabled = photosBusy;
       remove.addEventListener('click', () => {
         if (photosBusy) return;
         photosBusy = true;
@@ -262,24 +273,31 @@ photosImportButton?.addEventListener('click', () => {
   photosImportButton.disabled = true;
   if (photosCancelButton) photosCancelButton.disabled = true;
   const jobId = activeImportId;
+  let retriesRemaining = 2;
+  const requestWithRetry = async (path: string, body?: object, timeoutMs?: number): Promise<unknown> => {
+    for (;;) {
+      try {
+        return await api(path, body, timeoutMs);
+      } catch (error) {
+        const delay = error instanceof AdminRequestError ? error.retryAfterSeconds : null;
+        if (delay === null || !Number.isInteger(delay) || delay < 1 || delay > 60 || retriesRemaining === 0) throw error;
+        retriesRemaining -= 1;
+        sayPhotos('Sabio is limiting admin requests. The import will continue automatically.');
+        await new Promise<void>((resolve) => { window.setTimeout(resolve, delay * 1000); });
+      }
+    }
+  };
   void (async () => {
     try {
-      const statusValue = await api(`/api/admin/photos/status?id=${encodeURIComponent(jobId)}`);
-      if (!statusValue || typeof statusValue !== 'object' || !('mediaItemsSet' in statusValue) || typeof statusValue.mediaItemsSet !== 'boolean') {
-        throw new Error('invalid_response');
-      }
-      if (statusValue.mediaItemsSet !== true) {
-        sayPhotos('Google Photos has not finished the selection yet. Return to the picker and tap Done.');
-        return;
-      }
       sayPhotos('Importing selected photos into private storage…');
-      for (let attempt = 0; attempt < 13; attempt += 1) {
-        const result = await api('/api/admin/photos/import', { jobId });
+      for (let step = 0; step < MAX_IMPORT_PHOTOS; step += 1) {
+        const result = await requestWithRetry('/api/admin/photos/import', { jobId }, 30000);
         if (!result || typeof result !== 'object' || !('done' in result) || typeof result.done !== 'boolean') throw new Error('invalid_response');
         if (result.done) {
           activeImportId = null;
+          if (photosImportPanel) photosImportPanel.hidden = true;
           sayPhotos('Selected photos were copied to private storage.');
-          await refreshPhotos();
+          await refreshPhotos(() => requestWithRetry('/api/admin/photos'));
           return;
         }
         sayPhotos('Importing selected photos…');
@@ -288,6 +306,8 @@ photosImportButton?.addEventListener('click', () => {
     } catch (error) { sayPhotos(photoError(error)); }
     finally {
       photosBusy = false;
+      if (photosConnect && !activeImportId) photosConnect.disabled = false;
+      if (photosDisconnect) photosDisconnect.disabled = false;
       if (photosImportButton) photosImportButton.disabled = false;
       if (photosCancelButton) photosCancelButton.disabled = false;
     }
@@ -304,6 +324,8 @@ photosCancelButton?.addEventListener('click', () => {
     await refreshPhotos();
   }).catch((error) => sayPhotos(photoError(error))).finally(() => {
     photosBusy = false;
+    if (photosConnect && !activeImportId) photosConnect.disabled = false;
+    if (photosDisconnect) photosDisconnect.disabled = false;
     if (photosCancelButton) photosCancelButton.disabled = false;
   });
 });

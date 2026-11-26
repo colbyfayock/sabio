@@ -78,6 +78,7 @@ test('Google Picker import stores private images, encrypts transient credentials
     }
     if (url.hostname === 'photospicker.googleapis.com' && url.pathname === '/v1/sessions' && init.method === 'POST') {
       assert.ok(['Bearer transient-access-token', 'Bearer refreshed-access-token'].includes(init.headers.Authorization));
+      assert.deepEqual(JSON.parse(init.body), { pickingConfig: { maxItemCount: '25' } });
       return Response.json({ id: 'session-private-id', pickerUri: 'https://photos.google.com/picker?session=session-private-id', pollingConfig: { pollInterval: '5s' } });
     }
     if (url.hostname === 'photospicker.googleapis.com' && url.pathname === '/v1/sessions/session-private-id' && init.method !== 'DELETE') {
@@ -200,12 +201,12 @@ test('Google Picker import stores private images, encrypts transient credentials
   assert.equal((await (await worker.fetch(request('/api/admin/photos', undefined, ownerHeaders), env)).json()).photos.length, 0);
 });
 
-test('photo administration rejects cross-origin requests, malformed callback state, and videos', async (t) => {
+test('photo administration rejects invalid requests and accepts up to 25 paginated still photos', async (t) => {
   const db = new LocalD1();
   t.after(() => db.close());
   const { token, jwk } = await ownerToken();
   const ownerHeaders = { 'Cf-Access-Jwt-Assertion': token };
-  let selected = true;
+  let stillPhotoCount = 0;
   t.mock.method(globalThis, 'fetch', async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.href === `${vars.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`) return Response.json({ keys: [jwk] });
@@ -213,11 +214,24 @@ test('photo administration rejects cross-origin requests, malformed callback sta
     if (url.hostname === 'photospicker.googleapis.com' && url.pathname === '/v1/sessions' && init.method === 'POST') {
       return Response.json({ id: 'video-session', pickerUri: 'https://photos.google.com/picker/video-session' });
     }
-    if (url.hostname === 'photospicker.googleapis.com' && url.pathname === '/v1/sessions/video-session') return Response.json({ mediaItemsSet: selected });
+    if (url.hostname === 'photospicker.googleapis.com' && url.pathname === '/v1/sessions/video-session') {
+      return init.method === 'DELETE' ? new Response(null, { status: 204 }) : Response.json({ mediaItemsSet: true });
+    }
     if (url.hostname === 'photospicker.googleapis.com' && url.pathname === '/v1/mediaItems') {
+      if (stillPhotoCount) {
+        const start = Number(url.searchParams.get('pageToken') || 0);
+        const end = Math.min(start + 20, stillPhotoCount);
+        const mediaItems = Array.from({ length: end - start }, (_, i) => ({
+          id: `test-photo-${start + i}`,
+          mediaFile: { baseUrl: 'https://lh3.googleusercontent.com/test-photo', mimeType: 'image/jpeg' },
+        }));
+        return Response.json({ mediaItems, nextPageToken: end < stillPhotoCount ? String(end) : undefined });
+      }
       return Response.json({ mediaItems: [{ id: 'video-id', mediaFile: { baseUrl: 'https://lh3.googleusercontent.com/video', mimeType: 'video/mp4' } }] });
     }
-    if (url.hostname === 'photospicker.googleapis.com' && init.method === 'DELETE') return new Response(null, { status: 204 });
+    if (url.hostname === 'lh3.googleusercontent.com') {
+      return new Response(jpegBytes, { headers: { 'Content-Type': 'image/jpeg' } });
+    }
     assert.fail(`Unexpected mocked request host/path: ${url.hostname}${url.pathname}`);
   });
   const env = {
@@ -236,6 +250,48 @@ test('photo administration rejects cross-origin requests, malformed callback sta
   assert.equal(response.status, 415);
   assert.deepEqual(await response.json(), { error: 'unsupported_media' });
   assert.equal(env.PHOTO_BUCKET.objects.size, 0);
+
+  const importNext = () => worker.fetch(request('/api/admin/photos/import', { jobId: active.id }, ownerHeaders), env);
+  stillPhotoCount = 26;
+  const oversized = await importNext();
+  assert.equal(oversized.status, 413);
+  assert.deepEqual(await oversized.json(), { error: 'too_many_photos' });
+  assert.equal(env.PHOTO_BUCKET.objects.size, 0, 'an oversized selection saves no photos');
+
+  db.sqlite.exec('DELETE FROM access_rate_limits'); // Start the next batch in a fresh rate window.
+  stillPhotoCount = 25;
+  for (let count = 1; count <= stillPhotoCount; count += 1) {
+    const batch = await importNext();
+    assert.equal(batch.status, 200);
+    const result = await batch.json();
+    assert.equal(result.importedCount, count);
+    assert.equal(result.done, count === stillPhotoCount);
+  }
+  assert.equal(env.PHOTO_BUCKET.objects.size, 25);
+});
+
+test('owner can reorder all 100 photos within the reorder-specific body limit', async (t) => {
+  const db = new LocalD1();
+  t.after(() => db.close());
+  const { token, jwk } = await ownerToken();
+  const ownerHeaders = { 'Cf-Access-Jwt-Assertion': token };
+  t.mock.method(globalThis, 'fetch', async (input) => {
+    assert.equal(String(input), `${vars.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
+    return Response.json({ keys: [jwk] });
+  });
+  const env = { ...vars, DB: db, PHOTO_BUCKET: makeBucket() };
+  const ids = Array.from({ length: 100 }, () => crypto.randomUUID());
+  const insert = db.sqlite.prepare(`INSERT INTO photo_items
+    (id, object_key, source_hash, import_id, content_type, size_bytes, position, created_at)
+    VALUES (?, ?, ?, 'synthetic', 'image/jpeg', 1, ?, 0)`);
+  ids.forEach((id, position) => insert.run(id, id, id, position));
+  const order = ids.slice().reverse();
+
+  const reorder = await worker.fetch(request('/api/admin/photos/reorder', { ids: order }, ownerHeaders), env);
+  assert.equal(reorder.status, 200);
+  assert.deepEqual(db.sqlite.prepare('SELECT id FROM photo_items ORDER BY position').all().map((row) => row.id), order);
+  const oversized = await worker.fetch(request('/api/admin/photos/reorder', { ids: order, extra: 'x'.repeat(4096) }, ownerHeaders), env);
+  assert.equal(oversized.status, 400);
 });
 
 test('Picker API permission failures are distinguished from expired Google authorization', async (t) => {
